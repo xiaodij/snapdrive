@@ -1,0 +1,56 @@
+name: Snap
+options:
+  bundleIdPrefix: com.xiaodijin
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 9AR7JN3CDC
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  Snap:
+    type: application
+    platform: iOS
+    sources:
+      - path: Snap
+    info:
+      path: Snap/Info.plist
+      properties:
+        CFBundleDisplayName: Snap
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: AccentColor
+        # iPad is in TARGETED_DEVICE_FAMILY, and iPad apps must support all four
+        # orientations unless they declare UIRequiresFullScreen.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: >-
+          Snap uses the camera to scan documents so they can be cropped,
+          cleaned up and uploaded to your OneDrive.
+        NSPhotoLibraryAddUsageDescription: >-
+          Snap can save a copy of a scanned PDF to your photo library.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.xiaodijin.snap.auth
+            CFBundleURLSchemes:
+              - msauth.com.xiaodijin.snap
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xiaodijin.snap
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
