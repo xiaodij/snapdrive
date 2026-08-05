@@ -1,4 +1,4 @@
-name: Snap
+name: SnapDrive
 options:
   bundleIdPrefix: com.xiaodijin
   deploymentTarget:
@@ -9,21 +9,24 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: 9AR7JN3CDC
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_STRICT_CONCURRENCY: minimal
 
 targets:
-  Snap:
+  SnapDrive:
     type: application
     platform: iOS
     sources:
-      - path: Snap
+      - path: SnapDrive
+    # All fork-specific values (bundle id, team, client id, tenant) live here.
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
     info:
-      path: Snap/Info.plist
+      path: SnapDrive/Info.plist
       properties:
-        CFBundleDisplayName: Snap
+        CFBundleDisplayName: SnapDrive
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
         UILaunchScreen:
@@ -37,17 +40,21 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: >-
-          Snap uses the camera to scan documents so they can be cropped,
+          SnapDrive uses the camera to scan documents so they can be cropped,
           cleaned up and uploaded to your OneDrive.
         NSPhotoLibraryAddUsageDescription: >-
-          Snap can save a copy of a scanned PDF to your photo library.
+          SnapDrive can save a copy of a scanned PDF to your photo library.
+        # Read at runtime by Config.swift, substituted from Config.xcconfig at
+        # build time so there is exactly one place to edit.
+        SnapClientID: $(SNAP_CLIENT_ID)
+        SnapTenant: $(SNAP_TENANT)
+        # Derived from the bundle id, so the redirect URI can never drift from it.
         CFBundleURLTypes:
-          - CFBundleURLName: com.xiaodijin.snap.auth
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER).auth
             CFBundleURLSchemes:
-              - msauth.com.xiaodijin.snap
+              - msauth.$(PRODUCT_BUNDLE_IDENTIFIER)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.xiaodijin.snap
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"

@@ -9,7 +9,9 @@ import Security
 /// re-authenticating after a restore costs one tap.
 enum Keychain {
 
-    private static let service = "com.xiaodijin.snap.onedrive"
+    /// Scoped to the bundle id, so a fork never shares a keychain item with another
+    /// build installed alongside it.
+    private static let service = (Bundle.main.bundleIdentifier ?? "SnapDrive") + ".onedrive"
 
     static func set(_ data: Data, for account: String) {
         let query: [String: Any] = [

@@ -6,7 +6,7 @@ import os
 /// Readable from a Mac with the phone connected:
 ///
 ///     log collect --device-udid <udid> --last 10m --output snap.logband
-///     log show snap.logband --predicate 'subsystem == "com.xiaodijin.snap"' --info
+///     log show snap.logband --predicate 'subsystem BEGINSWITH "com.xiaodijin"' --info
 ///
 /// or live in Console.app by selecting the device and filtering on the subsystem.
 ///
@@ -15,7 +15,8 @@ import os
 /// stage names — because a log that says `<private>` where the failure is tells you
 /// nothing. File names and account details stay redacted.
 enum Log {
-    private static let subsystem = "com.xiaodijin.snap"
+    /// Derived from the bundle id so a fork logs under its own subsystem.
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "SnapDrive"
 
     static let scan = Logger(subsystem: subsystem, category: "scan")
     static let upload = Logger(subsystem: subsystem, category: "upload")

@@ -47,7 +47,7 @@ struct HomeView: View {
                     }
                 }
             }
-            .navigationTitle("Snap")
+            .navigationTitle("SnapDrive")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: {

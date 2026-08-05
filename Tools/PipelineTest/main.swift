@@ -303,7 +303,7 @@ for mode in ColorMode.allCases {
         pixelWidth: render.width, pixelHeight: render.height,
         mode: mode, detectedMode: mode, lines: lines, preview: render.preview
     )
-    let pdf = DocumentPipeline.buildPDF(from: [page], title: "Snap test — \(mode.label)")
+    let pdf = DocumentPipeline.buildPDF(from: [page], title: "SnapDrive test — \(mode.label)")
     let url = outputDir.appendingPathComponent("test-\(mode.rawValue).pdf")
     try pdf.write(to: url)
     let paper = PaperSize.pageSize(pixelWidth: render.width, pixelHeight: render.height)
@@ -320,7 +320,7 @@ let multi = try ColorMode.allCases.map { mode -> ProcessedPage in
                          pixelWidth: r.width, pixelHeight: r.height,
                          mode: mode, detectedMode: mode, lines: lines, preview: r.preview)
 }
-let multiPDF = DocumentPipeline.buildPDF(from: multi, title: "Snap multi-page test")
+let multiPDF = DocumentPipeline.buildPDF(from: multi, title: "SnapDrive multi-page test")
 try multiPDF.write(to: outputDir.appendingPathComponent("test-multipage.pdf"))
 print("3-page mixed  \(kb(multiPDF.count))")
 

@@ -1,7 +1,8 @@
-# Snap
+# SnapDrive
 
 An iOS document scanner that crops, deskews, cleans up and uploads straight to OneDrive.
-Everything runs on the phone — the Mac is only needed to build and install it.
+Everything runs on the phone — there is no server, and nothing is sent anywhere except the
+finished PDF going to your own OneDrive.
 
 - **Capture** — VisionKit's document camera: automatic edge detection, perspective
   correction, multi-page, with manual corner handles when the auto crop is wrong.
@@ -9,111 +10,170 @@ Everything runs on the phone — the Mac is only needed to build and install it.
   black & white, whichever suits it. Overridable per page.
 - **Cleanup** — uneven lighting and shadows are divided out before rendering.
 - **OCR** — on-device via the Neural Engine, layered invisibly behind the page so the PDF
-  is searchable and selectable. No network, nothing leaves the phone.
-- **Upload** — one multi-page PDF straight to a OneDrive folder you pick.
+  is searchable and selectable. No network, no account, no per-page cost.
+- **Upload** — one multi-page PDF to a OneDrive folder you pick.
 
-## One-time setup
+Requires iOS 18 or later. Built and tested on an iPhone 13 Pro / 14 Pro; OCR works on any
+device with a Neural Engine (A12 or newer).
 
-### 1. Register an Azure app — **already done**
+---
 
-The registration exists and its client ID is compiled into `Snap/Config.swift`:
+## Setup
 
-| | |
-|---|---|
-| Display name | `Snap` |
-| Application (client) ID | `de30792a-98aa-4d0a-90e5-0f86eda12646` |
-| Sign-in audience | `PersonalMicrosoftAccount` |
-| Redirect URI | `msauth.com.xiaodijin.snap://auth` (public client) |
-| Permissions | `Files.ReadWrite`, `User.Read`, `offline_access` (delegated) |
+Four things: register an app with Microsoft, put its ID in one config file, build, install.
+Budget about ten minutes. **None of it costs money** — Entra ID app registrations and
+Microsoft Graph calls against personal OneDrive are free.
 
-It was created with:
+### Prerequisites
+
+```sh
+brew install xcodegen        # generates the Xcode project from project.yml
+brew install azure-cli       # only needed for the CLI route in step 1
+```
+
+Plus Xcode 16 or later and an Apple ID for signing. A free Apple ID works — builds just
+expire after 7 days instead of a year.
+
+### 1. Register an Azure app
+
+This is what lets the app ask for access to a OneDrive. It is free and takes one command.
+
+<details open>
+<summary><b>With the Azure CLI</b> (fastest)</summary>
 
 ```sh
 az login --allow-no-subscriptions
-az ad app create --display-name "Snap" \
+
+cat > /tmp/graph-perms.json <<'EOF'
+[{ "resourceAppId": "00000003-0000-0000-c000-000000000000",
+   "resourceAccess": [
+     { "id": "5c28f0bf-8a70-41f1-8ab2-9032436ddb65", "type": "Scope" },
+     { "id": "7427e0e9-2fba-42fe-b0c0-848c9e6a8182", "type": "Scope" },
+     { "id": "e1fe6dd8-ba31-4d61-89e7-88639da4683d", "type": "Scope" }
+   ]}]
+EOF
+
+az ad app create \
+  --display-name "SnapDrive" \
   --sign-in-audience PersonalMicrosoftAccount \
-  --public-client-redirect-uris "msauth.com.xiaodijin.snap://auth" \
+  --public-client-redirect-uris "msauth.com.example.snapdrive://auth" \
   --is-fallback-public-client true \
-  --required-resource-accesses @perms.json
+  --required-resource-accesses @/tmp/graph-perms.json \
+  --query appId -o tsv
 ```
 
-To inspect or change it later:
+Replace `com.example.snapdrive` with the bundle identifier you intend to use — it has to
+match `PRODUCT_BUNDLE_IDENTIFIER` in step 2 exactly. The command prints your client ID.
+
+Those three GUIDs are Microsoft Graph's `Files.ReadWrite`, `offline_access` and
+`User.Read`. Verify them yourself if you like:
 
 ```sh
-az ad app show --id de30792a-98aa-4d0a-90e5-0f86eda12646
+az ad sp show --id 00000003-0000-0000-c000-000000000000 \
+  --query "oauth2PermissionScopes[?value=='Files.ReadWrite'].id" -o tsv
 ```
 
-The client ID is **not a secret** — a public client can't hold one, which is why the app
-uses PKCE. On its own it grants no access to anything: a user still has to sign in with
-their own Microsoft account and consent, and the resulting token only ever reaches their
-own OneDrive.
+If `az` complains about MFA when reading Graph, re-authenticate with the Graph scope:
 
-**If you forked this**, register your own app with the commands above and replace the ID,
-rather than reusing this one.
-
-<details>
-<summary>Recreating it from scratch (portal)</summary>
-
-Sign in to <https://entra.microsoft.com> with the **same Microsoft account** that owns the
-OneDrive you want to upload to.
-
-1. **App registrations** → **New registration**
-2. Name: `Snap`
-3. Supported account types: **Personal Microsoft accounts only**
-4. Redirect URI: platform **Mobile and desktop applications**, value:
-
-   ```
-   msauth.com.xiaodijin.snap://auth
-   ```
-
-5. **Register**, then copy the **Application (client) ID** from the overview page.
-6. **Authentication** → confirm **Allow public client flows** is set to **Yes**.
-7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated
-   permissions** → add `Files.ReadWrite`, `User.Read`, and `offline_access`.
-
-No client secret is needed — the app uses PKCE, which is the correct flow for a public
-client that can't keep a secret.
+```sh
+az login --tenant <your-tenant-id> --scope "https://graph.microsoft.com//.default" --allow-no-subscriptions
+```
 
 </details>
 
-### 2. Give the app the client ID
+<details>
+<summary><b>Through the portal</b> instead</summary>
 
-Already compiled in via `defaultClientID` in `Snap/Config.swift`. A different ID can be
-pasted into **Settings → OneDrive app registration** in the app at runtime, which
-overrides the compiled-in value without a rebuild.
+At <https://entra.microsoft.com>, signed in with the account that owns the OneDrive:
+
+1. **App registrations** → **New registration**
+2. Name: `SnapDrive`
+3. Supported account types: **Personal Microsoft accounts only**
+4. Redirect URI: platform **Mobile and desktop applications**, value
+   `msauth.<your-bundle-id>://auth`
+5. **Register**, then copy the **Application (client) ID**
+6. **Authentication** → confirm **Allow public client flows** is **Yes**
+7. **API permissions** → **Microsoft Graph** → **Delegated** → add `Files.ReadWrite`,
+   `User.Read`, `offline_access`
+
+</details>
+
+**No client secret is needed.** The app uses PKCE, which is the correct flow for a public
+client that cannot keep a secret. There is nothing to rotate and nothing to leak.
+
+### 2. Configure
+
+Everything fork-specific lives in one file — **`Config.xcconfig`**:
+
+```
+PRODUCT_BUNDLE_IDENTIFIER = com.example.snapdrive
+DEVELOPMENT_TEAM          = ABCDE12345
+SNAP_CLIENT_ID            = <the client id from step 1>
+SNAP_TENANT               = consumers
+```
+
+| Key | Notes |
+|---|---|
+| `PRODUCT_BUNDLE_IDENTIFIER` | Must match the redirect URI registered in step 1. The app derives `msauth.<bundle-id>://auth` from it, so you never write that string twice. |
+| `DEVELOPMENT_TEAM` | `security find-certificate -c "Apple Development" -p \| openssl x509 -noout -subject` |
+| `SNAP_CLIENT_ID` | From step 1. Not a secret — see below. |
+| `SNAP_TENANT` | `consumers` (personal accounts), `organizations` (work/school), `common` (both), or a specific tenant id. Must match the audience you registered. |
+
+Nothing else needs editing. The bundle identifier flows into the redirect URI, the URL
+scheme and the keychain scope automatically, and `Config.swift` reads the client ID and
+tenant from Info.plist at runtime — so these values can't drift out of sync with each
+other, which is the usual way this kind of setup breaks.
+
+A client ID can also be pasted into **Settings → OneDrive app registration** in the running
+app, which overrides the compiled-in value without a rebuild. Handy for testing; the
+xcconfig is the real answer.
 
 ### 3. Build and install
 
 ```sh
-xcodegen generate                                    # regenerate Snap.xcodeproj
-open Snap.xcodeproj                                  # then Cmd-R with your phone selected
+xcodegen generate
+open SnapDrive.xcodeproj      # select your phone, Cmd-R
 ```
 
-Or from the command line, with the phone plugged in and unlocked:
+Or from the command line, phone plugged in and unlocked:
 
 ```sh
-xcodebuild -project Snap.xcodeproj -scheme Snap \
-  -destination 'platform=iOS,name=YOUR PHONE' build
+xcodegen generate
+xcrun devicectl list devices                       # find your device
+xcodebuild -project SnapDrive.xcodeproj -scheme SnapDrive \
+  -destination 'id=<device-udid>' -configuration Release \
+  -derivedDataPath /tmp/snapdrive build
+xcrun devicectl device install app --device <device-id> \
+  /tmp/snapdrive/Build/Products/Release-iphoneos/SnapDrive.app
 ```
 
-Set `DEVELOPMENT_TEAM` in `project.yml` to your own Apple team ID before building. With a
-paid developer account an install lasts a year; on a free Apple ID it expires after 7 days
-and needs re-signing.
+USB is considerably more reliable than a wireless connection for installs — over Wi-Fi the
+tunnel frequently drops mid-transfer, so just retry if it does.
 
-### Changing the bundle ID
+### 4. First run
 
-If you change `PRODUCT_BUNDLE_IDENTIFIER`, you must also update, in lockstep:
+1. On the phone: **Settings → General → VPN & Device Management** → trust your developer
+   certificate. Only needed once.
+2. Open SnapDrive, tap **Sign in to OneDrive**, approve the consent prompt.
+3. Scan something.
 
-- `Config.bundleID` in `Snap/Config.swift`
-- the `CFBundleURLSchemes` entry in `project.yml`
-- the redirect URI in the Azure registration
+---
 
-They all have to spell the same thing or the sign-in redirect won't come back.
+## Is the client ID a secret?
 
-### Work/school accounts
+No. Public clients — native apps — cannot hold secrets, because anyone can unpack the
+binary. That is the entire reason this uses PKCE: the app sends a hash of a one-time random
+verifier when starting sign-in and the verifier itself when redeeming the code, so an
+intercepted authorization code is useless on its own.
 
-`Config.tenant` is `consumers` (personal Microsoft accounts). Change it to `common` and
-re-register the Azure app with a matching account type to allow work/school accounts too.
+A client ID grants no access to anything. A user still has to sign in with their own
+Microsoft account and consent, and the resulting token only ever reaches *their* OneDrive.
+
+The ID checked into `Config.xcconfig` belongs to the published build. **Register your own**
+anyway — so your users see your app name on the consent screen, and your usage isn't
+attributed to someone else's registration.
+
+---
 
 ## How pages get processed
 
@@ -125,11 +185,11 @@ something:
   that, any page shot under warm indoor light reads as "colour" and triples in size.
 - *Tone* is measured across the whole page at near-native resolution, because
   downsampling a text page turns crisp black-on-white into grey mush and every page then
-  looks like it has photographs in it.
+  looks like it contains photographs.
 
 Lighting is cancelled by dividing through an illumination field built by *dilating* a
 thumbnail — taking a local maximum erases text, shaded boxes and photos, leaving only
-paper. That's what separates a shadow from a genuinely grey region: both are the same
+paper. That is what separates a shadow from a genuinely grey region: both are the same
 pixel value, and only the surrounding paper level says which is which.
 
 **Rendering.** Greyscale and B&W pages are flat-fielded the same way, so a fixed threshold
@@ -145,7 +205,7 @@ without embedding a font.
 **Page size** is inferred from the aspect ratio against the common paper sizes, so scans
 print at the right scale instead of at some arbitrary DPI.
 
-## Typical output
+### Typical output
 
 A 2550×3300 text page, Balanced quality:
 
@@ -156,38 +216,63 @@ A 2550×3300 text page, Balanced quality:
 | Black & White | 2319×3000 | 1-bit Flate | **36 KB** |
 
 B&W is roughly 5× smaller *and* higher resolution — 1-bit content compresses about 20×, so
-the extra resolution is nearly free and it's what keeps small type crisp. That's why the
+the extra resolution is nearly free and it is what keeps small type crisp. That is why the
 analyser reaches for it whenever a page is just ink on paper.
 
-## Testing the pipeline
+---
 
-The image and PDF code under `Snap/Core` is deliberately free of UIKit and VisionKit, so it
-compiles and runs on macOS:
+## Testing
+
+The image and PDF code under `SnapDrive/Core` is deliberately free of UIKit and VisionKit,
+so it compiles and runs on macOS:
 
 ```sh
 swift run PipelineTest
 ```
 
 That builds synthetic scans — shadowed, warm-cast, with photos, with shaded boxes, with
-colour logos — and checks the colour decision on each, verifies the shadow is actually
-removed, prints encoded sizes, runs OCR and checks the text comes back, then writes PDFs to
+colour logos — checks the colour decision on each, verifies the shadow is actually removed,
+prints encoded sizes, runs OCR and checks the text comes back, then writes PDFs to
 `/tmp/snap-test`. Validate those with:
 
 ```sh
 gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=nullpage /tmp/snap-test/*.pdf   # strict parse
-pdftotext /tmp/snap-test/test-blackAndWhite.pdf -                     # OCR layer
+pdftotext /tmp/snap-test/test-blackAndWhite.pdf -                     # OCR text layer
 pdfinfo /tmp/snap-test/test-multipage.pdf                             # page size
 ```
+
+**Known limitation:** the colour-mode thresholds are validated against synthetic fixtures,
+not a corpus of real captures. They are named constants at the top of
+`SnapDrive/Core/Processing/PageAnalyzer.swift` and are meant to be tuned. Every page also
+has a manual override in the review screen.
+
+### Logs
+
+```sh
+sudo log collect --device-udid <udid> --last 10m --output /tmp/snapdrive.logarchive
+log show /tmp/snapdrive.logarchive --predicate 'subsystem == "<your-bundle-id>"' --info
+```
+
+Or open Console.app, select the device, and filter on your bundle identifier. Stage
+transitions, per-page colour decisions and sizes, upload lifecycle and Graph error bodies
+are all logged.
+
+---
 
 ## Layout
 
 ```
-Snap/Core/          UIKit-free: analysis, rendering, OCR, PDF writing
-  Models/           ColorMode, QualityTier, RecognizedLine, ProcessedPage
-  Processing/       PageAnalyzer, ImageProcessor, OCRService, DocumentPipeline
-  PDF/              PDFWriter, PaperSize, Deflate
-Snap/OneDrive/      PKCE OAuth, Graph client, keychain
-Snap/App/           App entry, settings, scan coordination
-Snap/Views/         SwiftUI screens
-Tools/PipelineTest/ macOS harness for Snap/Core
+SnapDrive/Core/       UIKit-free: analysis, rendering, OCR, PDF writing
+  Models/             ColorMode, QualityTier, RecognizedLine, ProcessedPage
+  Processing/         PageAnalyzer, ImageProcessor, OCRService, DocumentPipeline
+  PDF/                PDFWriter, PaperSize, Deflate
+SnapDrive/OneDrive/   PKCE OAuth, Graph client, keychain
+SnapDrive/App/        App entry, settings, scan coordination, logging
+SnapDrive/Views/      SwiftUI screens
+Tools/PipelineTest/   macOS harness for SnapDrive/Core
+Config.xcconfig       everything a fork needs to change
 ```
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

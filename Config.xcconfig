@@ -1,0 +1,43 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Everything a fork needs to change lives in this one file.
+//
+//  Edit, then run `xcodegen generate` and build. Nothing else references these
+//  values directly — the bundle identifier flows into the OAuth redirect URI
+//  automatically, and the app reads the client ID and tenant from Info.plist at
+//  runtime, so these four lines can't drift out of sync with each other.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+//  Your app's bundle identifier.
+//
+//  The OAuth redirect URI is derived from this as `msauth.<bundle-id>://auth`,
+//  and that exact string must also be registered on the Azure app (see README).
+//  Change one, change the other.
+PRODUCT_BUNDLE_IDENTIFIER = com.xiaodijin.snapdrive
+
+
+//  Your Apple Developer Team ID.
+//
+//  Find it with:  security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+//  A free Apple ID works; builds just expire after 7 days instead of a year.
+DEVELOPMENT_TEAM = 9AR7JN3CDC
+
+
+//  Azure "Application (client) ID" from your own app registration.
+//
+//  The default below is the registration for the published build. It is not a
+//  secret — a public client cannot hold one, which is why this uses PKCE — but
+//  you should still register your own so your users see your app name on the
+//  consent screen and your usage isn't mixed in with someone else's. README has
+//  a single `az ad app create` command that does it.
+SNAP_CLIENT_ID = de30792a-98aa-4d0a-90e5-0f86eda12646
+
+
+//  Which Microsoft accounts may sign in. Must match the `--sign-in-audience`
+//  used when registering the app:
+//
+//    consumers  personal Microsoft accounts (outlook / hotmail / live)
+//    organizations  work or school accounts only
+//    common     both
+//    <tenant-id>  one specific organisation
+SNAP_TENANT = consumers

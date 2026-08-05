@@ -58,6 +58,9 @@ struct PDFPage {
 ///    correctly in Preview, Acrobat, Spotlight and pdftotext, with nothing embedded.
 enum PDFWriter {
 
+    /// Written into the PDF's /Producer and /Creator fields.
+    static let producer = "SnapDrive"
+
     static func makePDF(pages: [PDFPage], title: String?, creationDate: Date = Date()) -> Data {
         var objects: [Data] = []
 
@@ -128,7 +131,7 @@ enum PDFWriter {
             """))
         put(toUnicodeNo, stream(dict: "", payload: identityToUnicodeCMap()))
 
-        var info = "<< /Producer \(textString("Snap")) /Creator \(textString("Snap"))"
+        var info = "<< /Producer \(textString(producer)) /Creator \(textString(producer))"
         if let title, !title.isEmpty { info += " /Title \(textString(title))" }
         info += " /CreationDate (\(pdfDate(creationDate)))"
         info += " /ModDate (\(pdfDate(creationDate))) >>"

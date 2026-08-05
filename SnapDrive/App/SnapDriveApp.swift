@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SnapApp: App {
+struct SnapDriveApp: App {
     @StateObject private var settings = AppSettings()
     @StateObject private var auth = OneDriveAuth()
 
