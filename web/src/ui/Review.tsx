@@ -22,10 +22,12 @@ import {
 import { settingsStore, updateSettings } from '../state/settings';
 import { useStore } from '../state/store';
 import type { Rotation } from '../workers/protocol';
+import { CaptureButton } from './CaptureButton';
 import { Icon, Segmented, Switch, useObjectUrl } from './common';
 
 export function Review({
   onAddPages,
+  onAddFiles,
   onDiscard,
   onSend,
   onShare,
@@ -34,6 +36,7 @@ export function Review({
   onEmailSettings,
 }: {
   onAddPages: () => void;
+  onAddFiles: (files: File[]) => void;
   onDiscard: () => void;
   onSend: () => void;
   onShare: () => void;
@@ -80,9 +83,9 @@ export function Review({
         </div>
         <h1>{pages.length === 1 ? '1 Page' : `${pages.length} Pages`}</h1>
         <div className="side right">
-          <button className="link-btn" onClick={onAddPages}>
+          <CaptureButton className="link-btn" onLive={onAddPages} onFiles={onAddFiles} label="Add page">
             Add
-          </button>
+          </CaptureButton>
         </div>
       </div>
 

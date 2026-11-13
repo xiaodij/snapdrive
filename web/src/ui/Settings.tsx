@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { COLOR_MODE_LABEL, QUALITY_DETAIL, QUALITY_LABEL, type ColorSelection, type QualityTier } from '../core/types';
-import { ApiError } from '../services/api';
 import { requestPersistence } from '../services/db';
 import { oneDriveStore, signIn, signOut } from '../services/onedrive';
 import { clearRecents, recentsStore } from '../services/outbox';
-import { connectResend, disconnectResend, isEmailAddress, parseAddressList, resendStore } from '../services/resend';
+import { disconnectResend, isEmailAddress, parseAddressList, resendStore } from '../services/resend';
 import { OCR_LANGUAGES, settingsStore, updateEmail, updateSettings } from '../state/settings';
 import { useStore } from '../state/store';
-import { Icon, Segmented, Sheet, Switch, toast } from './common';
+import { Icon, Segmented, Sheet, Switch } from './common';
+import { EmailConnect } from './Setup';
+import { UpdateSection } from './UpdateSection';
 
-export function SettingsSheet({ onClose, onPickFolder, focus }: { onClose: () => void; onPickFolder: () => void; focus?: 'email' }) {
+export function SettingsSheet({ onClose, onPickFolder, onSetup, focus }: { onClose: () => void; onPickFolder: () => void; onSetup: () => void; focus?: 'email' }) {
   const s = useStore(settingsStore);
   const od = useStore(oneDriveStore);
   const recents = useStore(recentsStore);
@@ -22,6 +23,21 @@ export function SettingsSheet({ onClose, onPickFolder, focus }: { onClose: () =>
 
   return (
     <Sheet title="Settings" onClose={onClose}>
+      <div className="section">
+        <div className="group">
+          <button className="row" onClick={onSetup}>
+            <span className="lead">
+              <Icon name="share" />
+            </span>
+            <div className="main">
+              <div className="title">Guided setup</div>
+              <div className="sub">Connect OneDrive and email, choose the camera</div>
+            </div>
+            <Icon name="chevron" className="chev" />
+          </button>
+        </div>
+      </div>
+
       <div className="section">
         <div className="label">Output</div>
         <div className="group">
@@ -45,6 +61,13 @@ export function SettingsSheet({ onClose, onPickFolder, focus }: { onClose: () =>
                   {COLOR_MODE_LABEL[m]}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="row input-row plain">
+            <label htmlFor="camera-mode">Camera</label>
+            <select id="camera-mode" value={s.cameraMode} onChange={(e) => updateSettings({ cameraMode: e.target.value as 'live' | 'system' })}>
+              <option value="live">Live camera (auto-detect)</option>
+              <option value="system">Phone camera app</option>
             </select>
           </div>
           <div className="row plain">
@@ -194,8 +217,10 @@ export function SettingsSheet({ onClose, onPickFolder, focus }: { onClose: () =>
             </button>
           )}
         </div>
-        <div className="footer">SnapDrive {__APP_VERSION__}. Open source (MIT): github.com/xiaodij/snapdrive</div>
+        <div className="footer">Open source (MIT): github.com/xiaodij/snapdrive</div>
       </div>
+
+      <UpdateSection />
     </Sheet>
   );
 }
@@ -203,8 +228,6 @@ export function SettingsSheet({ onClose, onPickFolder, focus }: { onClose: () =>
 function EmailSettings() {
   const s = useStore(settingsStore);
   const rs = useStore(resendStore);
-  const [key, setKey] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [toText, setToText] = useState(s.email.to.join(', '));
   const [ccText, setCcText] = useState(s.email.cc.join(', '));
@@ -212,22 +235,6 @@ function EmailSettings() {
   const verified = (rs.domains ?? []).filter((d) => d.status === 'verified').map((d) => d.name);
   const fromDomain = s.email.fromAddress.split('@')[1] ?? '';
   const fromLocal = s.email.fromAddress.split('@')[0] ?? '';
-
-  const connect = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      // The From domain is left for the user to choose: picking one silently could send from a
-      // domain they never meant to use for this.
-      const r = await connectResend(key);
-      setKey('');
-      toast(r.access === 'full' ? 'Resend connected' : 'Resend connected (sending-only key)');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : (err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const commitList = (field: 'to' | 'cc', text: string) => {
     const list = parseAddressList(text);
@@ -247,26 +254,12 @@ function EmailSettings() {
         <>
           <div className="group">
             <div className="row stack plain">
-              <div className="title">API key</div>
-              <input
-                className="field"
-                type="password"
-                placeholder="re_…"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button className="btn" disabled={busy || !key.trim().startsWith('re_')} onClick={() => void connect()}>
-                {busy ? 'Checking…' : 'Connect'}
-              </button>
-              {error && <div className="error-text">{error}</div>}
+              <EmailConnect returnTo="/?setup=email" />
             </div>
           </div>
           <div className="footer">
-            Scans are emailed through your own Resend account. Create a key at resend.com → API Keys. A full-access key lets SnapDrive
-            list your verified domains; a sending-only key works too. The key is sealed in an encrypted cookie on this device and is
-            never stored on the server.
+            Scans are emailed through your own Resend account. Your connection is sealed in an encrypted cookie on this
+            device and is never stored on the server.
           </div>
         </>
       ) : (

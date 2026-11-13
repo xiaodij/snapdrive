@@ -6,6 +6,7 @@
 // sheet is never captured twice. Every capture starts processing in the background at once.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fitLongEdge, type Quad } from '../core/raster';
+import { acquireCamera, releaseCamera } from '../services/camera';
 import { pipeline } from '../services/pipeline';
 import { addCaptures, sessionStore } from '../state/session';
 import { settingsStore, updateSettings } from '../state/settings';
@@ -41,26 +42,16 @@ export function Camera({ onDone, onClose }: { onDone: () => void; onClose: () =>
   const track = useRef({ quad: null as Quad | null, since: 0, armed: true, misses: 0, lastCapturedCenter: null as { x: number; y: number } | null });
 
   // ── Stream lifecycle ───────────────────────────────────────────────────────
-  const stop = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  }, []);
-
+  // The stream is shared and outlives this screen (services/camera.ts): every new camera
+  // request is another permission prompt in an iOS home-screen app.
   const start = useCallback(async () => {
-    stop();
     setCam({ kind: 'starting' });
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCam({ kind: 'failed', message: 'This browser does not allow camera access from a web page.' });
-      return;
-    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } },
-      });
+      const stream = await acquireCamera();
       streamRef.current = stream;
-      const video = videoRef.current!;
-      video.srcObject = stream;
+      const video = videoRef.current;
+      if (!video) return;
+      if (video.srcObject !== stream) video.srcObject = stream;
       await video.play().catch(() => {});
       const vt = stream.getVideoTracks()[0];
       const caps = (vt.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
@@ -74,26 +65,32 @@ export function Camera({ onDone, onClose }: { onDone: () => void; onClose: () =>
         kind: 'failed',
         message:
           name === 'NotAllowedError'
-            ? 'Camera access was declined. Allow it in your browser settings, or use the system camera below.'
+            ? 'Camera access was declined. Use the iPhone camera below, which needs no permission, or allow the camera and try again.'
             : name === 'NotFoundError'
               ? 'No camera was found on this device.'
-              : 'The camera could not be started.',
+              : name === 'NotSupportedError'
+                ? 'This browser does not allow camera access from a web page.'
+                : 'The camera could not be started.',
       });
     }
-  }, [stop]);
+  }, []);
 
   useEffect(() => {
     void start();
+    // Backgrounding mutes the stream; it usually resumes by itself. Only ask again if iOS
+    // actually ended it.
     const onVisibility = () => {
-      if (document.hidden) stop();
-      else void start();
+      if (document.hidden) return;
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (!track || track.readyState === 'ended') void start();
+      else void videoRef.current?.play().catch(() => {});
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      stop();
+      releaseCamera();
     };
-  }, [start, stop]);
+  }, [start]);
 
   // ── Capture ────────────────────────────────────────────────────────────────
   const capture = useCallback(async () => {

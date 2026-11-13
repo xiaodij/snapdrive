@@ -60,12 +60,14 @@ export function signIn(returnTo = '/'): void {
 }
 
 /** Called once on load when the URL fragment carries the sign-in outcome. */
-export async function completeSignIn(): Promise<{ ok: boolean; message?: string } | null> {
-  const hash = new URLSearchParams(location.hash.slice(1));
-  const outcome = hash.get('ms');
-  if (!outcome) return null;
-  history.replaceState(null, '', location.pathname + location.search);
-  if (outcome !== 'ok') return { ok: false, message: hash.get('message') ?? 'Sign-in failed.' };
+/**
+ * The Worker reports the outcome in the query string (App reads it with takeQueryParams).
+ * Never in the fragment: in iOS home-screen apps a fragment change revokes camera permission
+ * (WebKit bug 215884).
+ */
+export async function completeSignIn(outcome: { ms?: string; message?: string }): Promise<{ ok: boolean; message?: string } | null> {
+  if (!outcome.ms) return null;
+  if (outcome.ms !== 'ok') return { ok: false, message: outcome.message ?? 'Sign-in failed.' };
   token = null;
   try {
     const me = await graph<{ displayName?: string; userPrincipalName?: string; mail?: string }>('/me?$select=displayName,userPrincipalName,mail');
@@ -79,6 +81,23 @@ export async function completeSignIn(): Promise<{ ok: boolean; message?: string 
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
+}
+
+/** Read and remove query parameters without reloading or touching the fragment. */
+export function takeQueryParams(names: string[]): Record<string, string | undefined> {
+  const url = new URL(location.href);
+  const out: Record<string, string | undefined> = {};
+  let changed = false;
+  for (const n of names) {
+    const v = url.searchParams.get(n);
+    if (v !== null) {
+      out[n] = v;
+      url.searchParams.delete(n);
+      changed = true;
+    }
+  }
+  if (changed) history.replaceState(null, '', url.pathname + url.search);
+  return out;
 }
 
 export async function signOut(): Promise<void> {

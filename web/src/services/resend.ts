@@ -16,7 +16,22 @@ export interface ResendState {
   connected: boolean;
   access?: ResendAccess;
   keyHint?: string;
+  /** 'oauth': connected through Resend's approval page; 'key': a pasted API key. */
+  method?: 'oauth' | 'key';
   domains?: ResendDomain[];
+  /** The server can connect accounts through Resend OAuth (no key copying). */
+  oauthAvailable?: boolean;
+}
+
+// Resend rotates its OAuth refresh token on every use and cancels the whole connection if an
+// old one is used again. The Worker refreshes inside whichever call finds the access token
+// expired, so two calls at once could both refresh with the same token. Every call to the
+// relay therefore goes through this one-at-a-time queue.
+let queue: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => {});
+  return run;
 }
 
 export const resendStore = createStore<ResendState>({ connected: false });
@@ -27,8 +42,11 @@ export async function initResend(): Promise<void> {
   const cached = await db.get<ResendState>(CACHE_KEY);
   if (cached) resendStore.set(cached);
   try {
-    const s = await api<{ connected: boolean; access?: ResendAccess; keyHint?: string }>('/api/resend/status');
-    const next: ResendState = { ...s, domains: s.connected ? cached?.domains : undefined };
+    const [s, cfg] = await Promise.all([
+      serial(() => api<{ connected: boolean; access?: ResendAccess; keyHint?: string; method?: 'oauth' | 'key' }>('/api/resend/status')),
+      api<{ resendOAuth?: boolean }>('/api/config').catch(() => ({ resendOAuth: false })),
+    ]);
+    const next: ResendState = { ...s, oauthAvailable: !!cfg.resendOAuth, domains: s.connected ? cached?.domains : undefined };
     resendStore.set(next);
     await db.set(CACHE_KEY, next);
   } catch {
@@ -36,12 +54,19 @@ export async function initResend(): Promise<void> {
   }
 }
 
+/** Full-page trip to Resend's approval screen; the Worker brings us back with ?resend=ok. */
+export function connectResendOAuth(returnTo = '/'): void {
+  location.href = `/api/resend/login?return=${encodeURIComponent(returnTo)}`;
+}
+
 export async function connectResend(apiKey: string): Promise<ResendState> {
-  const r = await api<{ access: ResendAccess; keyHint: string; domains?: ResendDomain[] }>('/api/resend/connect', {
-    method: 'POST',
-    body: JSON.stringify({ apiKey: apiKey.trim() }),
-  });
-  const next: ResendState = { connected: true, access: r.access, keyHint: r.keyHint, domains: r.domains };
+  const r = await serial(() =>
+    api<{ access: ResendAccess; keyHint: string; domains?: ResendDomain[] }>('/api/resend/connect', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey: apiKey.trim() }),
+    }),
+  );
+  const next: ResendState = { connected: true, method: 'key', access: r.access, keyHint: r.keyHint, domains: r.domains, oauthAvailable: resendStore.get().oauthAvailable };
   resendStore.set(next);
   await db.set(CACHE_KEY, next);
   return next;
@@ -49,9 +74,9 @@ export async function connectResend(apiKey: string): Promise<ResendState> {
 
 export async function disconnectResend(): Promise<void> {
   try {
-    await api('/api/resend/disconnect', { method: 'POST' });
+    await serial(() => api('/api/resend/disconnect', { method: 'POST' }));
   } finally {
-    resendStore.set({ connected: false });
+    resendStore.set({ connected: false, oauthAvailable: resendStore.get().oauthAvailable });
     await db.del(CACHE_KEY);
   }
 }
@@ -70,12 +95,23 @@ export interface OutgoingEmail {
 /** Returns Resend's email id. `idempotencyKey` makes retries safe (Resend de-duplicates). */
 export async function sendEmail(email: OutgoingEmail, idempotencyKey: string): Promise<string> {
   const body = { ...email, cc: email.cc?.length ? email.cc : undefined, reply_to: email.reply_to || undefined };
-  const r = await api<{ id: string }>('/api/resend/emails', {
-    method: 'POST',
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(body),
-  });
-  return r.id;
+  try {
+    const r = await serial(() =>
+      api<{ id: string }>('/api/resend/emails', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(body),
+      }),
+    );
+    return r.id;
+  } catch (err) {
+    // The connection expired or was revoked in Resend: show it as disconnected.
+    if ((err as { status?: number; code?: string }).status === 401) {
+      resendStore.set({ connected: false, oauthAvailable: resendStore.get().oauthAvailable });
+      await db.del(CACHE_KEY);
+    }
+    throw err;
+  }
 }
 
 /** Resend's limit is 40 MB per email after base64 (which grows data by a third). */
@@ -106,4 +142,28 @@ export function parseAddressList(s: string): string[] {
 export function formatFrom(name: string, address: string): string {
   const clean = name.replace(/["<>\r\n]/g, '').trim();
   return clean ? `${clean} <${address.trim()}>` : address.trim();
+}
+
+/** Called once on load when the URL carries the result of a Resend connection. */
+export async function completeResendConnect(params: { resend?: string; message?: string }): Promise<{ ok: boolean; message?: string } | null> {
+  if (!params.resend) return null;
+  if (params.resend !== 'ok') return { ok: false, message: params.message ?? 'Could not connect Resend.' };
+  await initResend();
+  return { ok: resendStore.get().connected };
+}
+
+/** A short email to the configured recipients, to prove the setup works end to end. */
+export async function sendTestEmail(from: string, to: string[], replyTo?: string): Promise<string> {
+  return sendEmail(
+    {
+      from,
+      to,
+      reply_to: replyTo,
+      subject: 'SnapDrive is connected',
+      html: '<p>This is a test from SnapDrive. Scans you email will arrive like this, with the PDF attached.</p>',
+      text: 'This is a test from SnapDrive. Scans you email will arrive like this, with the PDF attached.',
+      attachments: [],
+    },
+    `snapdrive-test-${Date.now()}`,
+  );
 }

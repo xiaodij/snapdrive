@@ -55,3 +55,36 @@ export function declaredTooLarge(request: Request, max: number): boolean {
   const size = Number(declared);
   return !Number.isFinite(size) || size > max;
 }
+
+/** A same-origin path to come back to after sign-in; anything else collapses to "/". */
+export function safeReturnPath(raw: string | null | undefined, origin: string): string {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
+  try {
+    const target = new URL(raw, origin);
+    if (target.origin !== origin) return '/';
+    return target.pathname + target.search;
+  } catch {
+    return '/';
+  }
+}
+
+/**
+ * The return path with a sign-in outcome added as QUERY parameters (`/?resume=review&ms=ok`).
+ *
+ * Never a #fragment: in iOS home-screen web apps a change to the URL hash revokes the camera
+ * permission the user just granted (WebKit bug 215884), so a fragment here would cost them
+ * another permission prompt after every sign-in.
+ */
+export function withResult(path: string, params: Record<string, string>): string {
+  const target = new URL(path, 'https://return.invalid');
+  for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
+  return target.pathname + target.search;
+}
+
+/** Copy of `response` with extra Set-Cookie headers appended. */
+export function withCookies(response: Response, cookies: string[]): Response {
+  if (!cookies.length) return response;
+  const out = new Response(response.body, response);
+  for (const cookie of cookies) out.headers.append('Set-Cookie', cookie);
+  return out;
+}

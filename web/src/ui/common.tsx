@@ -66,6 +66,7 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  circle: <circle cx="12" cy="12" r="9.5" />,
   checkCircle: (
     <>
       <circle cx="12" cy="12" r="9.5" />

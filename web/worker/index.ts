@@ -18,7 +18,11 @@ import { ConfigError } from './seal';
 const health: Handler = () => json({ ok: true, version: VERSION });
 
 const config: Handler = (_request, env) =>
-  json({ onedrive: Boolean(env.MS_CLIENT_ID && env.MS_CLIENT_SECRET), tenant: env.MS_TENANT || 'consumers' });
+  json({
+    onedrive: Boolean(env.MS_CLIENT_ID && env.MS_CLIENT_SECRET),
+    tenant: env.MS_TENANT || 'consumers',
+    resendOAuth: resend.oauthConfigured(env),
+  });
 
 const ROUTES: Record<string, Partial<Record<string, Handler>>> = {
   '/api/health': { GET: health },
@@ -28,6 +32,8 @@ const ROUTES: Record<string, Partial<Record<string, Handler>>> = {
   '/api/ms/token': { POST: ms.token },
   '/api/ms/logout': { POST: ms.logout },
   '/api/ms/chunk': { PUT: ms.chunk },
+  '/api/resend/login': { GET: resend.login },
+  '/api/resend/callback': { GET: resend.callback },
   '/api/resend/connect': { POST: resend.connect },
   '/api/resend/status': { GET: resend.status },
   '/api/resend/domains': { GET: resend.domains },

@@ -48,7 +48,7 @@ describe('POST /api/resend/connect', () => {
     expect(cookie.attributes).toContain('HttpOnly');
     expect(cookie.attributes).toContain(`Max-Age=${400 * 86400}`);
     expect(cookie.value).not.toContain('fullAccess');
-    expect(await unseal(env.SEAL_KEY, 'sd_rs', jar.cookies.get('sd_rs'))).toEqual({ key: FULL_KEY, access: 'full', keyHint: 're_…abcd' });
+    expect(await unseal(env.SEAL_KEY, 'sd_rs', jar.cookies.get('sd_rs'))).toEqual({ method: 'key', key: FULL_KEY, access: 'full', keyHint: 're_…abcd' });
   });
 
   it('accepts a sending-only key as access "sending"', async () => {
@@ -80,7 +80,7 @@ describe('status, domains, emails, disconnect', () => {
     const env = makeEnv();
     expect(await (await call(env, '/api/resend/status')).json()).toEqual({ connected: false });
     const { jar } = await connect(env);
-    expect(await (await call(env, '/api/resend/status', { jar })).json()).toEqual({ connected: true, access: 'full', keyHint: 're_…abcd' });
+    expect(await (await call(env, '/api/resend/status', { jar })).json()).toEqual({ connected: true, method: 'key', access: 'full', keyHint: 're_…abcd' });
   });
 
   it('refuses to send or list without a connection', async () => {

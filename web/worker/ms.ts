@@ -10,7 +10,7 @@ import { clearChunked, clearCookie, isLocalDev, parseCookies, readChunked, seria
 import type { CookieOptions } from './cookies';
 import { bytesToBase64Url, randomBase64Url, timingSafeEqual, utf8 } from './encoding';
 import type { Env, RequestLog } from './env';
-import { declaredTooLarge, empty, firstLine, json, passthrough, readJson, redirect, str } from './http';
+import { declaredTooLarge, empty, firstLine, json, passthrough, readJson, redirect, safeReturnPath, str, withResult } from './http';
 import { seal, unseal } from './seal';
 
 export const SCOPES = 'Files.ReadWrite User.Read offline_access';
@@ -51,24 +51,8 @@ function redirectUri(url: URL): string {
   return `${url.origin}/api/ms/callback`;
 }
 
-/** A same-origin path to come back to after sign-in; anything else collapses to "/". */
-export function safeReturnPath(raw: string | null | undefined, origin: string): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
-  try {
-    const target = new URL(raw, origin);
-    if (target.origin !== origin) return '/';
-    return target.pathname + target.search;
-  } catch {
-    return '/';
-  }
-}
-
-function fragment(path: string, params: Record<string, string>): string {
-  const query = Object.entries(params)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join('&');
-  return `${path}#${query}`;
-}
+// Re-exported for existing callers/tests; the helpers live in http.ts, shared with resend.ts.
+export { safeReturnPath };
 
 async function readSession(request: Request, env: Env): Promise<{ cookies: Map<string, string>; session: MsSession | null }> {
   const cookies = parseCookies(request.headers.get('Cookie'));
@@ -81,7 +65,7 @@ async function readSession(request: Request, env: Env): Promise<{ cookies: Map<s
 export async function login(_request: Request, env: Env, url: URL): Promise<Response> {
   const ret = safeReturnPath(url.searchParams.get('return'), url.origin);
   if (!env.MS_CLIENT_ID) {
-    return redirect(fragment(ret, { ms: 'error', message: 'OneDrive sign-in is not configured on this server.' }));
+    return redirect(withResult(ret, { ms: 'error', message: 'OneDrive sign-in is not configured on this server.' }));
   }
 
   const state = randomBase64Url(32);
@@ -110,7 +94,7 @@ export async function callback(request: Request, env: Env, url: URL, log: Reques
   const saved = await unseal<OAuthState>(env.SEAL_KEY, OAUTH_COOKIE, cookies.get(OAUTH_COOKIE));
   const ret = safeReturnPath(saved?.return, url.origin);
   const clearState = [clearCookie(OAUTH_COOKIE, oauthCookie(url))];
-  const fail = (message: string) => redirect(fragment(ret, { ms: 'error', message }), clearState);
+  const fail = (message: string) => redirect(withResult(ret, { ms: 'error', message }), clearState);
 
   const error = url.searchParams.get('error');
   if (error) return fail(firstLine(url.searchParams.get('error_description') ?? undefined) || error);
@@ -152,7 +136,7 @@ export async function callback(request: Request, env: Env, url: URL, log: Reques
   if (!refreshToken) return fail('Microsoft did not return a refresh token (offline_access was not granted).');
 
   const sealed = await seal(env.SEAL_KEY, MS_COOKIE, { rt: refreshToken } satisfies MsSession, MS_TTL);
-  return redirect(fragment(ret, { ms: 'ok' }), [...clearState, ...writeChunked(cookies, MS_COOKIE, sealed, msCookie(url))]);
+  return redirect(withResult(ret, { ms: 'ok' }), [...clearState, ...writeChunked(cookies, MS_COOKIE, sealed, msCookie(url))]);
 }
 
 // ── POST /api/ms/token ─────────────────────────────────────────────────────────────────────

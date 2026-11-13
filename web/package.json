@@ -1,7 +1,7 @@
 {
   "name": "snapdrive-web",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "SnapDrive v2: document scanner PWA. Crops, deskews, picks colour/grey/B&W, OCRs, and sends searchable PDFs to OneDrive or by email through the user's own Resend account.",
   "scripts": {

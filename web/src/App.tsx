@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useRegisterSW } from 'virtual:pwa-register/react';
 import { formatBytes } from './services/api';
 import { requestPersistence } from './services/db';
-import { completeSignIn, initOneDrive, oneDriveStore, signIn } from './services/onedrive';
+import { completeSignIn, initOneDrive, oneDriveStore, signIn, takeQueryParams } from './services/onedrive';
 import { preloadOcr } from './services/ocr';
 import { enqueue, loadOutbox, retryAutomatically, runJob, type Job } from './services/outbox';
-import { formatFrom, initResend, isEmailAddress, resendStore } from './services/resend';
+import { completeResendConnect, formatFrom, initResend, isEmailAddress, resendStore } from './services/resend';
 import { addCaptures, buildPdf, discardSession, ocrDone, pageReady, restoreSession, sessionStore, startSession } from './state/session';
 import { loadSettings, settingsStore } from './state/settings';
+import { applyUpdate, initUpdates, updateStore } from './state/update';
 import { useStore } from './state/store';
 import { Camera } from './ui/Camera';
 import { Icon, Sheet, toast, ToastHost } from './ui/common';
@@ -17,6 +17,7 @@ import { Home } from './ui/Home';
 import { Review } from './ui/Review';
 import { SendSheet, type SendPhase } from './ui/SendSheet';
 import { SettingsSheet } from './ui/Settings';
+import { SetupSheet, type SetupStep } from './ui/Setup';
 
 type Screen = 'home' | 'camera' | 'review';
 type Overlay =
@@ -24,7 +25,8 @@ type Overlay =
   | { kind: 'folders' }
   | { kind: 'crop'; pageId: string }
   | { kind: 'send'; phase: SendPhase }
-  | { kind: 'share'; file: File };
+  | { kind: 'share'; file: File }
+  | { kind: 'setup'; step?: SetupStep };
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -32,21 +34,29 @@ export function App() {
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const session = useStore(sessionStore);
 
-  const {
-    needRefresh: [updateReady],
-    updateServiceWorker,
-  } = useRegisterSW();
+  const update = useStore(updateStore);
 
   // ── Startup ────────────────────────────────────────────────────────────────
   useEffect(() => {
     void (async () => {
       await loadSettings();
+      initUpdates();
       await Promise.all([initOneDrive(), initResend(), loadOutbox()]);
       const restored = await restoreSession();
       setReady(true);
 
-      const signInResult = await completeSignIn();
+      // Results of OneDrive / Resend connections arrive as query parameters.
+      const back = takeQueryParams(['ms', 'resend', 'message', 'setup']);
+      const signInResult = await completeSignIn({ ms: back.ms, message: back.message });
       if (signInResult) toast(signInResult.ok ? 'Signed in to OneDrive' : `OneDrive sign-in failed: ${signInResult.message}`, 5000);
+      const resendResult = await completeResendConnect({ resend: back.resend, message: back.message });
+      if (resendResult) toast(resendResult.ok ? 'Resend connected' : `Resend: ${resendResult.message}`, 5000);
+      const s = settingsStore.get();
+      if (back.setup) {
+        setOverlay({ kind: 'setup', step: back.setup as SetupStep });
+      } else if (!s.setupDone && !oneDriveStore.get().signedIn && !resendStore.get().connected && !restored) {
+        setOverlay({ kind: 'setup' });
+      }
 
       const params = new URLSearchParams(location.search);
       const shared = params.get('shared');
@@ -181,14 +191,16 @@ export function App() {
           onPickFolder={() => setOverlay({ kind: 'folders' })}
           onEmailSettings={() => setOverlay({ kind: 'settings', focus: 'email' })}
           onShareJob={shareJob}
-          updateReady={updateReady}
-          onUpdate={() => void updateServiceWorker(true)}
+          onSetup={() => setOverlay({ kind: 'setup' })}
+          updateReady={update.ready}
+          onUpdate={() => void applyUpdate()}
         />
       )}
       {screen === 'camera' && <Camera onDone={() => setScreen('review')} onClose={closeCamera} />}
       {screen === 'review' && session && (
         <Review
           onAddPages={openCamera}
+          onAddFiles={(files) => addCaptures(files)}
           onDiscard={discard}
           onSend={() => void send()}
           onShare={() => void share()}
@@ -200,7 +212,12 @@ export function App() {
       {screen === 'review' && !session && <EmptyReview onHome={() => setScreen('home')} />}
 
       {overlay?.kind === 'settings' && (
-        <SettingsSheet focus={overlay.focus} onClose={() => setOverlay(null)} onPickFolder={() => setOverlay({ kind: 'folders' })} />
+        <SettingsSheet
+          focus={overlay.focus}
+          onClose={() => setOverlay(null)}
+          onPickFolder={() => setOverlay({ kind: 'folders' })}
+          onSetup={() => setOverlay({ kind: 'setup' })}
+        />
       )}
       {overlay?.kind === 'folders' && <FolderPicker onClose={() => setOverlay(null)} />}
       {cropPage && <CropEditor page={cropPage} onClose={() => setOverlay(null)} />}
@@ -212,6 +229,13 @@ export function App() {
         />
       )}
       {overlay?.kind === 'share' && <ShareSheet file={overlay.file} onClose={() => setOverlay(null)} />}
+      {overlay?.kind === 'setup' && (
+        <SetupSheet
+          step={overlay.step}
+          onClose={() => setOverlay(null)}
+          onPickFolder={() => setOverlay({ kind: 'folders' })}
+        />
+      )}
       <ToastHost />
     </>
   );

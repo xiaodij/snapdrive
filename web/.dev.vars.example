@@ -12,3 +12,8 @@ MS_CLIENT_SECRET=
 # Optional: extra origins the CSRF guard accepts, e.g. a Vite dev server proxying /api here.
 # Never set in production.
 # DEV_ORIGINS=http://localhost:5192
+
+# Resend OAuth client secret for the registered client in wrangler.jsonc (RESEND_CLIENT_ID).
+# Leave empty to hide "Connect Resend" (API-key pasting still works); /api/config then reports
+# resendOAuth=false. A fork registers its own client: see README.
+RESEND_CLIENT_SECRET=

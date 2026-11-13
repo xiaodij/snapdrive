@@ -1,12 +1,35 @@
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
 
+// Build identity: the app compares its own build with /version.json (never cached) to offer
+// updates. Timestamp plus commit, e.g. "2026-11-13T18:40Z 517fc89".
+const commit = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'local';
+  }
+})();
+const BUILD_ID = `${new Date().toISOString().slice(0, 16)}Z ${commit}`;
+
+/** Emits dist/version.json with the same build id the bundle was compiled with. */
+function versionFile(): Plugin {
+  return {
+    name: 'snapdrive-version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: pkg.version, build: BUILD_ID }) });
+    },
+  };
+}
+
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_ID__: JSON.stringify(BUILD_ID) },
   // Dev: `npm run worker:dev` serves the Worker on 8794; Vite proxies /api to it so OneDrive
   // sign-in and the Resend relay work from the dev server too. Ports registered in ports.md.
   server: {
@@ -21,6 +44,7 @@ export default defineConfig({
   optimizeDeps: { exclude: ['@jsquash/jpeg'] },
   plugins: [
     react(),
+    versionFile(),
     VitePWA({
       // Never reload under someone mid-scan: the home screen offers the update instead.
       registerType: 'prompt',

@@ -13,6 +13,10 @@ export interface Env {
   MS_CLIENT_SECRET?: string;
   /** Var. `consumers`, `organizations`, `common`, or a tenant id. */
   MS_TENANT?: string;
+  /** Var. Resend OAuth client id (dynamic client registration, confidential). */
+  RESEND_CLIENT_ID?: string;
+  /** Secret. Resend OAuth client secret (client_secret_basic). Shown once by Resend. */
+  RESEND_CLIENT_SECRET?: string;
   /**
    * Local development only (.dev.vars): extra origins the CSRF guard accepts, comma-separated,
    * e.g. a Vite dev server that proxies /api here. Never set in production.
@@ -20,7 +24,7 @@ export interface Env {
   DEV_ORIGINS?: string;
 }
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.1.0';
 
 /** Per-request facts for the access log. Never holds secrets, tokens or personal data. */
 export interface RequestLog {

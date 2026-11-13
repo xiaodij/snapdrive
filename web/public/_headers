@@ -13,3 +13,7 @@
 
 /tessdata/*
   Content-Type: application/octet-stream
+
+/version.json
+  ! Cache-Control
+  Cache-Control: no-store

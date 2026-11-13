@@ -5,6 +5,7 @@ import { resendStore } from '../services/resend';
 import { sessionStore } from '../state/session';
 import { settingsStore } from '../state/settings';
 import { useStore } from '../state/store';
+import { CaptureButton } from './CaptureButton';
 import { Icon } from './common';
 
 export function Home({
@@ -15,6 +16,7 @@ export function Home({
   onPickFolder,
   onEmailSettings,
   onShareJob,
+  onSetup,
   updateReady,
   onUpdate,
 }: {
@@ -25,6 +27,7 @@ export function Home({
   onPickFolder: () => void;
   onEmailSettings: () => void;
   onShareJob: (job: Job) => void;
+  onSetup: () => void;
   updateReady: boolean;
   onUpdate: () => void;
 }) {
@@ -60,6 +63,16 @@ export function Home({
           </div>
         )}
 
+        {!od.signedIn && !rs.connected && (
+          <div className="banner">
+            <Icon name="share" />
+            <span className="main">Choose where your scans go: OneDrive, email, or both.</span>
+            <button className="btn small" onClick={onSetup}>
+              Set up
+            </button>
+          </div>
+        )}
+
         {session && session.pages.length > 0 && (
           <div className="banner">
             <Icon name="doc" />
@@ -72,11 +85,11 @@ export function Home({
           </div>
         )}
 
-        <button className="scan-card" onClick={onScan} style={{ marginTop: 14 }}>
+        <CaptureButton className="scan-card" style={{ marginTop: 14 }} onLive={onScan} onFiles={onImport} label="Scan document">
           <Icon name="scan" />
           <strong>Scan document</strong>
           <span>Pages are cropped, cleaned up and made searchable</span>
-        </button>
+        </CaptureButton>
         <div className="home-actions">
           <label className="btn secondary">
             <Icon name="photos" /> Import photos
@@ -133,7 +146,7 @@ export function Home({
                 <Icon name="chevron" className="chev" />
               </button>
             )}
-            <button className="row" onClick={onEmailSettings}>
+            <button className="row" onClick={rs.connected ? onEmailSettings : onSetup}>
               <span className="lead">
                 <Icon name="mail" />
               </span>

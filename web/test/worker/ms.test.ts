@@ -82,8 +82,9 @@ describe('GET /api/ms/callback', () => {
     const res = await call(env, '/api/ms/callback?code=CODE&state=wrong-state', { jar });
     expect(res.status).toBe(302);
     const location = res.headers.get('Location')!;
-    expect(location.startsWith('/review?x=1#ms=error&message=')).toBe(true);
-    expect(decodeURIComponent(location)).toContain('state mismatch');
+    expect(location.startsWith('/review?x=1&ms=error&message=')).toBe(true);
+    expect(location).not.toContain('#'); // WebKit 215884: a hash change revokes camera permission
+    expect(new URLSearchParams(location.split('?')[1]).get('message')).toContain('state mismatch');
     expect(stub.calls).toHaveLength(0);
     const cookies = setCookies(res);
     expect(cookies.find((c) => c.name === 'sd_oauth')?.cleared).toBe(true);
@@ -93,18 +94,18 @@ describe('GET /api/ms/callback', () => {
   it('reports a missing state cookie and Microsoft errors', async () => {
     const env = makeEnv();
     const missing = await call(env, '/api/ms/callback?code=CODE&state=abc');
-    expect(missing.headers.get('Location')).toMatch(/^\/#ms=error&message=Sign-in%20expired/);
+    expect(missing.headers.get('Location')).toMatch(/^\/\?ms=error&message=Sign-in\+expired/);
 
     const { jar } = await startLogin(env);
     const denied = await call(env, '/api/ms/callback?error=access_denied&error_description=User%20declined.%0D%0ATrace%20ID%3A%20abc', { jar });
-    expect(denied.headers.get('Location')).toBe('/review?x=1#ms=error&message=User%20declined.');
+    expect(denied.headers.get('Location')).toBe('/review?x=1&ms=error&message=User+declined.');
   });
 
   it('redeems the code with secret + verifier, sets sd_ms, and never leaks tokens in the URL', async () => {
     const { env, jar, res, stub } = await signIn();
     expect(res.status).toBe(302);
     const location = res.headers.get('Location')!;
-    expect(location).toBe('/review?x=1#ms=ok');
+    expect(location).toBe('/review?x=1&ms=ok');
     for (const secret of ['AT-secret-1', 'RT-secret-1', 'CODE-123']) expect(location).not.toContain(secret);
 
     expect(stub.calls).toHaveLength(1);

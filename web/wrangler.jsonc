@@ -9,6 +9,9 @@
   //                     and disconnects every Resend key (all sealed cookies become unreadable).
   //   MS_CLIENT_SECRET  Azure client secret for the Web redirect URI
   //                     https://snapdrive.xjpc.ca/api/ms/callback (expires: renew before it does).
+  //   RESEND_CLIENT_SECRET  Resend OAuth client secret. Resend shows it once; if lost, register a
+  //                     new client (POST https://api.resend.com/oauth/register) and update
+  //                     RESEND_CLIENT_ID below.
   // Local dev: copy .dev.vars.example to .dev.vars (gitignored) and run `npm run worker:dev`
   // (port 8794).
   "name": "snapdrive",
@@ -25,7 +28,10 @@
     // v1's Azure registration (personal Microsoft accounts). Not a secret.
     "MS_CLIENT_ID": "de30792a-98aa-4d0a-90e5-0f86eda12646",
     // Must match the registration's sign-in audience: consumers | organizations | common | <tenant id>.
-    "MS_TENANT": "consumers"
+    "MS_TENANT": "consumers",
+    // Resend OAuth client (dynamic registration 2026-11-13, confidential, scope emails:send,
+    // redirect URIs <origin>/api/resend/callback for production and localhost:8794). Not a secret.
+    "RESEND_CLIENT_ID": "a5f2aa58-7a56-4762-a834-a4328f2ee904"
   },
   // Logs carry route, method, status, timing and upstream status codes only: never tokens,
   // API keys, cookies, email addresses or bodies (see worker/index.ts).

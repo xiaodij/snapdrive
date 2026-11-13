@@ -10,12 +10,13 @@ describe('routing and headers', () => {
   it('health and config', async () => {
     const env = makeEnv();
     const health = await call(env, '/api/health');
-    expect(await health.json()).toEqual({ ok: true, version: '2.0.0' });
+    expect(await health.json()).toEqual({ ok: true, version: '2.1.0' });
     expect(health.headers.get('Cache-Control')).toBe('no-store');
     expect(health.headers.get('Access-Control-Allow-Origin')).toBeNull();
 
-    expect(await (await call(env, '/api/config')).json()).toEqual({ onedrive: true, tenant: 'consumers' });
-    expect(await (await call(makeEnv({ MS_CLIENT_SECRET: undefined }), '/api/config')).json()).toEqual({ onedrive: false, tenant: 'consumers' });
+    expect(await (await call(env, '/api/config')).json()).toEqual({ onedrive: true, tenant: 'consumers', resendOAuth: false });
+    expect(await (await call(makeEnv({ RESEND_CLIENT_ID: 'rs-client', RESEND_CLIENT_SECRET: 'rs-secret' }), '/api/config')).json()).toMatchObject({ resendOAuth: true });
+    expect(await (await call(makeEnv({ MS_CLIENT_SECRET: undefined }), '/api/config')).json()).toEqual({ onedrive: false, tenant: 'consumers', resendOAuth: false });
   });
 
   it('404s unknown routes and 405s wrong methods, as JSON', async () => {

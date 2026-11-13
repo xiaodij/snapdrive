@@ -32,6 +32,14 @@ export interface Settings {
   ocrLangs: string[];
   titleFromText: boolean;
   autoCapture: boolean;
+  /**
+   * 'live': in-app viewfinder with page detection and auto-capture.
+   * 'system': the phone's own camera app (a file input with capture). Never triggers a
+   * permission prompt and takes full-resolution stills, one page per shot.
+   */
+  cameraMode: 'live' | 'system';
+  /** The guided setup has been completed or dismissed. */
+  setupDone: boolean;
   sendToOneDrive: boolean;
   sendByEmail: boolean;
   folder: FolderRef;
@@ -45,6 +53,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ocrLangs: ['eng'],
   titleFromText: true,
   autoCapture: true,
+  cameraMode: 'live',
+  setupDone: false,
   sendToOneDrive: true,
   sendByEmail: false,
   folder: ROOT_FOLDER,

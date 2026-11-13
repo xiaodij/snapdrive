@@ -88,19 +88,25 @@ short-lived OAuth state cookie (`Lax`, needed on the redirect back from Microsof
 | Route | Purpose |
 |---|---|
 | `GET /api/health` | `{ ok, version }` |
-| `GET /api/config` | `{ onedrive: boolean, tenant }`: whether the MS client secret is configured |
+| `GET /api/config` | `{ onedrive, tenant, resendOAuth }`: whether the Microsoft secret and the Resend OAuth client are configured |
 | `GET /api/ms/login?return=/path` | sets `sd_oauth` (sealed state + PKCE verifier, 10 min), 302 to Microsoft |
-| `GET /api/ms/callback` | checks state, redeems the code with secret + verifier, sets `sd_ms` (sealed refresh token, 90 days), 302 to `return` with `#ms=ok` or `#ms=error&message=…` |
+| `GET /api/ms/callback` | checks state, redeems the code with secret + verifier, sets `sd_ms` (sealed refresh token, 90 days), 302 to `return` with `?ms=ok` or `?ms=error&message=…` added to its query (never a `#`: WebKit bug 215884 revokes camera permission on hash changes) |
 | `POST /api/ms/token` | refresh grant from `sd_ms`; returns `{ access_token, expires_in }`, rotates the cookie. 401 `{ error: "signed_out" }` when there is none or Microsoft refuses it (cookie cleared) |
 | `POST /api/ms/logout` | clears `sd_ms` |
 | `PUT /api/ms/chunk` | fallback relay for an upload-session chunk when the browser cannot PUT to the upload URL directly. Headers `X-Upload-Url`, `Content-Range`; host must be a Microsoft storage host |
-| `POST /api/resend/connect` | `{ apiKey }` → validates against Resend, sets `sd_rs` (sealed key, 400 days); returns `{ access: "full"\|"sending", keyHint, domains? }` |
-| `GET /api/resend/status` | `{ connected, access, keyHint }` |
-| `GET /api/resend/domains` | Resend `GET /domains` passthrough (full-access keys only) |
-| `POST /api/resend/emails` | Resend `POST /emails` passthrough; forwards `Idempotency-Key` |
-| `POST /api/resend/disconnect` | clears `sd_rs` |
+| `GET /api/resend/login?return=/path` | sets `sd_rsoauth` (sealed state + PKCE verifier, Lax, 10 min), 302 to `https://api.resend.com/oauth/authorize` (scope `emails:send`) |
+| `GET /api/resend/callback` | checks state, redeems the code (client_secret_basic + verifier), seals the grant into `sd_rs` (60 days, renewed on refresh), 302 to `return` with `?resend=ok` or `?resend=error&message=…` |
+| `POST /api/resend/connect` | `{ apiKey }` → validates against Resend, sets `sd_rs` (sealed key, 400 days); returns `{ access: "full"\|"sending", keyHint, domains? }` (fallback to OAuth) |
+| `GET /api/resend/status` | `{ connected, method: "oauth"\|"key", access, keyHint }` |
+| `GET /api/resend/domains` | Resend `GET /domains` passthrough (full-access keys; an `emails:send` grant gets 403 `insufficient_scope`) |
+| `POST /api/resend/emails` | Resend `POST /emails` passthrough; forwards `Idempotency-Key`. OAuth: refreshes an expiring access token first and returns the rotated `sd_rs`; a dead grant gives 401 `{ error: "not_connected", message }` |
+| `POST /api/resend/disconnect` | revokes an OAuth grant at Resend (best effort), clears `sd_rs` |
 
-Secrets: `SEAL_KEY` (32 random bytes, base64), `MS_CLIENT_SECRET`. Vars: `MS_CLIENT_ID`,
-`MS_TENANT` (`consumers`). The OAuth redirect URI is `<request origin>/api/ms/callback`, so
+Secrets: `SEAL_KEY` (32 random bytes, base64), `MS_CLIENT_SECRET`, `RESEND_CLIENT_SECRET`.
+Vars: `MS_CLIENT_ID`, `MS_TENANT` (`consumers`), `RESEND_CLIENT_ID`.
+
+Resend rotates its refresh token on every use and revokes the whole grant if a rotated token
+is used again, so the page sends its `/api/resend/*` calls one at a time; the Worker reuses the
+15-minute access token and refreshes only when it is about to expire. The OAuth redirect URI is `<request origin>/api/ms/callback`, so
 each origin (production and `http://localhost:8794`) must be registered on the Azure app as a
 **Web** platform redirect URI.

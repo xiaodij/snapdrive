@@ -8,6 +8,15 @@ const OUT = 'test/out/e2e';
 
 test.skip(!existsSync(PHOTO), 'run scripts/make-e2e-fixtures.py first');
 
+/** First launch opens the guided setup; most tests start by closing it. */
+async function openHome(page: Page) {
+  await page.goto('/');
+  const setup = page.getByRole('dialog', { name: 'Set up SnapDrive' });
+  await expect(setup).toBeVisible();
+  await setup.getByRole('button', { name: 'Done' }).last().click();
+  await expect(setup).toHaveCount(0);
+}
+
 async function waitForPagesReady(page: Page) {
   // "Processing…" overlay gone and OCR finished on every page.
   await expect(page.getByText('Processing…')).toHaveCount(0, { timeout: 120_000 });
@@ -20,7 +29,7 @@ test('import a photo, auto-crop, OCR, and save a searchable PDF', async ({ page 
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
-  await page.goto('/');
+  await openHome(page);
   await expect(page.getByRole('button', { name: /Scan document/ })).toBeVisible();
 
   await page.locator('input[type=file][multiple]').first().setInputFiles(PHOTO);
@@ -65,7 +74,7 @@ test('live camera finds the page and auto-captures it', async ({ page, browserNa
   test.skip(browserName !== 'chromium', 'fake camera feed is a Chromium feature');
   test.skip(!existsSync('test/fixtures/e2e/doc-camera.y4m'), 'no fake camera feed');
 
-  await page.goto('/');
+  await openHome(page);
   await page.getByRole('button', { name: /Scan document/ }).click();
   await expect(page.locator('video')).toBeVisible();
   // Outline drawn over the page, then an automatic capture once it holds still.
@@ -77,28 +86,55 @@ test('live camera finds the page and auto-captures it', async ({ page, browserNa
   await expect(page.locator('input.field').first()).toHaveValue(/INVOICE/i);
 });
 
-test('email a scan through Resend', async ({ page }) => {
+test('guided setup connects email with a key, sends a test, then emails a scan', async ({ page }) => {
   const key = process.env.SNAPDRIVE_TEST_RESEND_KEY;
   test.skip(!key, 'set SNAPDRIVE_TEST_RESEND_KEY (a sending-only key) to run');
 
   await page.goto('/');
-  await page.getByRole('button', { name: /Email/ }).first().click();
-  await page.getByPlaceholder('re_…').fill(key!);
-  await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expect(page.getByText(/sending only|full access/)).toBeVisible();
-  await page.locator('#from-name').fill('SnapDrive Test');
-  const from = page.locator('#from-address');
-  if (await from.count()) await from.fill('snapdrive@xjpc.ca');
+  const setup = page.getByRole('dialog', { name: 'Set up SnapDrive' });
+  await expect(setup).toBeVisible();
+  // OAuth needs a person at Resend's approval page; the key path is the automatable one.
+  const useKey = setup.getByRole('button', { name: 'Use an API key instead' });
+  if (await useKey.count()) await useKey.click();
+  await setup.getByPlaceholder('re_…').fill(key!);
+  await setup.getByRole('button', { name: 'Connect with key' }).click();
+  await expect(setup.getByText('Resend connected')).toBeVisible();
+  await setup.locator('#setup-from-name').fill('SnapDrive Test');
+  await setup.locator('#setup-from').fill('snapdrive@xjpc.ca');
   // Resend's test sink: accepted and "delivered", reaches no one.
-  await page.locator('#to').fill('delivered@resend.dev');
-  await page.locator('#to').blur();
-  await page.getByRole('switch', { name: 'Email by default' }).check();
-  await page.getByRole('button', { name: 'Done' }).click();
+  await setup.locator('#setup-to').fill('delivered@resend.dev');
+  await setup.getByRole('button', { name: 'Send a test email' }).click();
+  await expect(setup.getByText(/Test sent to delivered@resend.dev/)).toBeVisible({ timeout: 60_000 });
+  await setup.getByRole('button', { name: 'Done' }).last().click();
 
   await page.locator('input[type=file][multiple]').first().setInputFiles(PHOTO);
   await waitForPagesReady(page);
-  await page.getByRole('button', { name: /Send email|Upload and email/ }).click();
+  // Email only: OneDrive may be available on this server but is not signed in here.
+  const oneDrive = page.getByRole('switch', { name: 'Upload to OneDrive' });
+  if (await oneDrive.isEnabled()) await oneDrive.uncheck();
+  await page.getByRole('button', { name: 'Send email' }).click();
   await expect(page.getByText(/Sent to delivered@resend.dev/)).toBeVisible({ timeout: 90_000 });
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByText(/emailed delivered@resend.dev/)).toBeVisible();
+});
+
+test('phone-camera mode: Scan opens the system camera (file capture), no live stream', async ({ page }) => {
+  await page.goto('/');
+  const setup = page.getByRole('dialog', { name: 'Set up SnapDrive' });
+  await setup.getByRole('button', { name: /Phone camera app/ }).click();
+  await setup.getByRole('button', { name: 'Done' }).last().click();
+  const scan = page.locator('label.scan-card input[type=file][capture]');
+  await expect(scan).toHaveCount(1);
+  await scan.setInputFiles(PHOTO);
+  await expect(page.getByRole('heading', { name: '1 Page' })).toBeVisible();
+  await waitForPagesReady(page);
+  expect(await page.locator('video').count()).toBe(0);
+});
+
+test('settings shows the build and checks for updates', async ({ page }) => {
+  await openHome(page);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByText(/^SnapDrive 2\.\d+\.\d+$/)).toBeVisible();
+  await page.getByRole('button', { name: 'Check for updates' }).click();
+  await expect(page.getByText('SnapDrive is up to date')).toBeVisible();
 });
