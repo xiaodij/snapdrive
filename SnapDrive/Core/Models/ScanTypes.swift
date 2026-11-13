@@ -73,29 +73,32 @@ enum QualityTier: String, CaseIterable, Codable, Identifiable {
 
     /// Longest-edge pixel cap. Images are only ever scaled down, never up.
     ///
+    /// For scale: an A4/Letter long edge is ~3500px at 300 dpi, so `balanced` colour
+    /// lands around 210 dpi and `high` around 290 dpi.
+    ///
     /// Bilevel gets a much higher cap on purpose: 1-bit output compresses ~20x, so the
     /// extra resolution is nearly free and it's what keeps small type crisp.
     func maxLongEdge(for mode: ColorMode) -> Int {
         switch (self, mode) {
-        case (.small, .color): return 1500
-        case (.small, .grayscale): return 1700
-        case (.small, .blackAndWhite): return 2200
+        case (.small, .color): return 1700
+        case (.small, .grayscale): return 2000
+        case (.small, .blackAndWhite): return 2600
 
-        case (.balanced, .color): return 2000
-        case (.balanced, .grayscale): return 2200
-        case (.balanced, .blackAndWhite): return 3000
+        case (.balanced, .color): return 2500
+        case (.balanced, .grayscale): return 2800
+        case (.balanced, .blackAndWhite): return 3300
 
-        case (.high, .color): return 2800
-        case (.high, .grayscale): return 3000
-        case (.high, .blackAndWhite): return 3500
+        case (.high, .color): return 3400
+        case (.high, .grayscale): return 3600
+        case (.high, .blackAndWhite): return 4200
         }
     }
 
     var jpegQuality: CGFloat {
         switch self {
-        case .small: return 0.45
-        case .balanced: return 0.60
-        case .high: return 0.75
+        case .small: return 0.50
+        case .balanced: return 0.70
+        case .high: return 0.82
         }
     }
 }

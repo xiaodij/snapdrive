@@ -7,7 +7,6 @@ import UIKit
 struct PageDraft: Identifiable {
     let id = UUID()
     let source: CGImage
-    var selection: ColorModeSelection = .auto
     var processed: ProcessedPage?
     var preview: UIImage?
 
@@ -36,6 +35,8 @@ final class ScanCoordinator: ObservableObject {
     @Published var filename: String = ""
     @Published var folder: FolderRef = .root
     @Published var quality: QualityTier = .balanced
+    /// Applies to the whole document. `.auto` still resolves per page.
+    @Published private(set) var colorSelection: ColorModeSelection = .auto
 
     private var ocrEnabled = true
     private var languages: [String] = ["en-US"]
@@ -65,9 +66,9 @@ final class ScanCoordinator: ObservableObject {
         ocrEnabled = settings.ocrEnabled
         languages = settings.languages
 
-        let selection = settings.colorSelection
+        colorSelection = settings.colorSelection
         pages = images.compactMap { image in
-            image.normalizedCGImage().map { PageDraft(source: $0, selection: selection) }
+            image.normalizedCGImage().map { PageDraft(source: $0) }
         }
         stage = .processing(done: 0, total: pages.count)
 
@@ -82,17 +83,23 @@ final class ScanCoordinator: ObservableObject {
         stage = .review
     }
 
-    /// Re-render one page after a colour-mode or quality change.
+    /// Re-render the document after a colour-mode change.
     ///
     /// Cheap on purpose: OCR results are carried over, so only the image pipeline reruns.
-    func updateSelection(_ selection: ColorModeSelection, forPageAt index: Int) async {
-        guard pages.indices.contains(index) else { return }
-        pages[index].selection = selection
-        await renderPage(at: index)
+    func updateColorSelection(_ selection: ColorModeSelection) async {
+        colorSelection = selection
+        await rerenderAllPages()
     }
 
     func updateQuality(_ tier: QualityTier) async {
         quality = tier
+        await rerenderAllPages()
+    }
+
+    private func rerenderAllPages() async {
+        // Invalidates any render still in flight; a result from a superseded settings
+        // change must not land after (and overwrite) the current one.
+        renderGeneration &+= 1
         for index in pages.indices {
             await renderPage(at: index)
         }
@@ -103,13 +110,16 @@ final class ScanCoordinator: ObservableObject {
         pages.remove(at: index)
     }
 
+    private var renderGeneration = 0
+
     private func renderPage(at index: Int) async {
         guard pages.indices.contains(index) else { return }
 
+        let generation = renderGeneration
         let draft = pages[index]
         let input = DocumentPipeline.PageInput(
             image: draft.source,
-            selection: draft.selection,
+            selection: colorSelection,
             cachedLines: draft.processed?.lines
         )
         let tier = quality
@@ -122,6 +132,7 @@ final class ScanCoordinator: ObservableObject {
             try? DocumentPipeline.process(input, quality: tier, ocrEnabled: ocr, languages: langs)
         }.value
 
+        guard generation == renderGeneration else { return }
         guard let result, pages.indices.contains(index) else {
             Log.scan.error("page \(index, privacy: .public) failed to render")
             return

@@ -37,6 +37,16 @@ struct ReviewView: View {
                         Button("Discard", role: .destructive) { dismiss() }
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if case .review = scan.stage, scan.pages.count > 1 {
+                        Button(role: .destructive) {
+                            scan.removePage(at: pageIndex)
+                            pageIndex = min(pageIndex, scan.pages.count - 1)
+                        } label: {
+                            Label("Remove Page", systemImage: "trash")
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $showFolderPicker) {
                 NavigationStack {
@@ -113,10 +123,10 @@ struct ReviewView: View {
     private var colorModeControl: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("This page").font(.caption).foregroundStyle(.secondary)
+                Text("Colour").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if let page = currentPage, case .auto = page.selection, let detected = page.detectedMode {
-                    Text("Auto chose \(detected.shortLabel)")
+                if case .auto = scan.colorSelection, let detected = currentPage?.detectedMode {
+                    Text("Auto chose \(detected.shortLabel) for this page")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -127,7 +137,10 @@ struct ReviewView: View {
                 }
             }
 
-            Picker("Colour", selection: currentSelectionBinding) {
+            Picker("Colour", selection: Binding(
+                get: { scan.colorSelection },
+                set: { selection in Task { await scan.updateColorSelection(selection) } }
+            )) {
                 Text("Auto").tag(ColorModeSelection.auto)
                 ForEach(ColorMode.allCases) { mode in
                     Text(mode.shortLabel).tag(ColorModeSelection.forced(mode))
@@ -187,16 +200,6 @@ struct ReviewView: View {
 
     private var currentPage: PageDraft? {
         scan.pages.indices.contains(pageIndex) ? scan.pages[pageIndex] : nil
-    }
-
-    private var currentSelectionBinding: Binding<ColorModeSelection> {
-        Binding(
-            get: { currentPage?.selection ?? .auto },
-            set: { selection in
-                let index = pageIndex
-                Task { await scan.updateSelection(selection, forPageAt: index) }
-            }
-        )
     }
 }
 

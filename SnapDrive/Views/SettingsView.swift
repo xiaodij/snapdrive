@@ -34,7 +34,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Colour")
                 } footer: {
-                    Text("Automatic keeps colour only when the page actually has some, uses greyscale for photos and shading, and drops to black & white for plain text — which is by far the smallest. You can always override a page in the review screen.")
+                    Text("Automatic keeps colour only when the page actually has some, uses greyscale for photos and shading, and drops to black & white for plain text — which is by far the smallest. You can change it for the whole document in the review screen.")
                 }
 
                 Section {
