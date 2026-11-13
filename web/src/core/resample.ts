@@ -182,3 +182,60 @@ export function grayToFloat(img: GrayImage): FloatImage {
   for (let i = 0; i < img.data.length; i++) out.data[i] = img.data[i] / 255;
   return out;
 }
+
+/**
+ * Enlarge with a separable Catmull-Rom (Keys, a = -0.5) kernel, edge-clamped.
+ *
+ * For upsampling only (use resizeFloat to shrink: cubic sampling aliases when reducing). Used to
+ * render soft, low-resolution captures at a print-like resolution *before* thresholding, so
+ * glyph edges come out smooth rather than as staircases of the source's coarse pixels.
+ */
+export function upscaleFloatCubic(img: FloatImage, width: number, height: number): FloatImage {
+  const { width: sw, height: sh, data: src } = img;
+  const taps = (dst: number, n: number) => {
+    const idx = new Int32Array(dst * 4);
+    const wts = new Float32Array(dst * 4);
+    for (let o = 0; o < dst; o++) {
+      const s = ((o + 0.5) * n) / dst - 0.5;
+      const i0 = Math.floor(s);
+      const t = s - i0;
+      const w = [((-0.5 * t + 1.0) * t - 0.5) * t, (1.5 * t - 2.5) * t * t + 1, ((-1.5 * t + 2.0) * t + 0.5) * t, (0.5 * t - 0.5) * t * t];
+      for (let k = 0; k < 4; k++) {
+        const i = i0 - 1 + k;
+        idx[o * 4 + k] = i < 0 ? 0 : i >= n ? n - 1 : i;
+        wts[o * 4 + k] = w[k];
+      }
+    }
+    return { idx, wts };
+  };
+  const hx = taps(width, sw);
+  const vy = taps(height, sh);
+  const mid = new Float32Array(width * sh);
+  for (let y = 0; y < sh; y++) {
+    const row = y * sw;
+    const out = y * width;
+    for (let x = 0; x < width; x++) {
+      const b = x * 4;
+      mid[out + x] =
+        src[row + hx.idx[b]] * hx.wts[b] +
+        src[row + hx.idx[b + 1]] * hx.wts[b + 1] +
+        src[row + hx.idx[b + 2]] * hx.wts[b + 2] +
+        src[row + hx.idx[b + 3]] * hx.wts[b + 3];
+    }
+  }
+  const out = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const b = y * 4;
+    const r0 = vy.idx[b] * width;
+    const r1 = vy.idx[b + 1] * width;
+    const r2 = vy.idx[b + 2] * width;
+    const r3 = vy.idx[b + 3] * width;
+    const w0 = vy.wts[b];
+    const w1 = vy.wts[b + 1];
+    const w2 = vy.wts[b + 2];
+    const w3 = vy.wts[b + 3];
+    const row = y * width;
+    for (let x = 0; x < width; x++) out[row + x] = mid[r0 + x] * w0 + mid[r1 + x] * w1 + mid[r2 + x] * w2 + mid[r3 + x] * w3;
+  }
+  return { width, height, data: out };
+}

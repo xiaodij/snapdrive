@@ -50,3 +50,4 @@ web/test/fixtures/e2e/
 
 # Internal project notes (estate paths, secrets locations): local only, this repo is public.
 CLAUDE.md
+web/test/fixtures/quality/

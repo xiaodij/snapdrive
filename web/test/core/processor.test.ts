@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { unzlibSync } from 'fflate';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { flatField, gaussianBlur, gaussianExact, ocrInput, packBilevel, processPage } from '../../src/core/imageProcessor';
+import { processPage as processPageV1 } from './helpers/imageProcessorV1';
 import { jpegComponentCount, mozjpegEncoder } from '../../src/core/jpeg';
 import { analyze } from '../../src/core/pageAnalyzer';
 import { createFloat, type GrayImage, type RGBAImage } from '../../src/core/raster';
@@ -119,11 +120,14 @@ describe('rendering and encoding (2550x3300 shadowed text page, balanced)', () =
 });
 
 describe.skipIf(!hasV1())('against v1 output on the identical source page', () => {
+  // Checks the port itself: the frozen v1-faithful processor (helpers/imageProcessorV1.ts)
+  // against the Swift app's own renders. v2's greyscale/B&W deliberately differ since
+  // 2026-11-13 (sharper, enlarged soft captures); quality-lab.test.ts compares the two.
   it('renders all three modes of v1 source-text-only.png and compares with v1 previews', async () => {
     const source = readPNG(resolve(V1_DIR, 'source-text-only.png'));
     const lines: string[] = [];
     for (const mode of COLOR_MODES) {
-      const out = await processPage(source, mode, 'balanced', mozjpegEncoder);
+      const out = await processPageV1(source, mode, 'balanced', mozjpegEncoder);
       const refPath = resolve(V1_DIR, `processed-${mode}.png`);
       if (!existsSync(refPath)) continue;
       const ref = readPNG(refPath);

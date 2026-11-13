@@ -24,13 +24,37 @@ import {
   type GrayImage,
   type RGBAImage,
 } from './raster';
-import { resizeFloat, resizeRGBA } from './resample';
+import { resizeFloat, resizeRGBA, upscaleFloatCubic } from './resample';
 import { jpegQuality, maxLongEdge, type ColorMode, type QualityTier, type RenderedPage } from './types';
 
 /**
- * Ink threshold applied to the flat-fielded page. Paper sits at ~1.0 after normalisation, so
- * this catches pencil and faded toner without chasing noise.
+ * v2 rendering settings for greyscale and black & white (2026-11-13).
+ *
+ * v1's chains (kept verbatim in test/core/helpers/imageProcessorV1.ts) lost too much on real
+ * captures: VisionKit and live-camera pages arrive soft and at ~200 dpi, and a 3x3 median
+ * followed by a hard threshold at that resolution erased thin strokes (serif E arms, i-dots)
+ * and left staircase edges. v2 sharpens after flat-fielding, renders soft pages at a print-like
+ * resolution before thresholding, and pins paper to white and ink to black on the grey path.
+ * Values were chosen with test/core/quality-lab.test.ts (OCR word accuracy + visual crops).
  */
+export const QUALITY = {
+  /** Ink threshold on the flat-fielded page (paper ~1.0). v1: 0.76. */
+  bwThreshold: 0.8,
+  /** Soft captures are enlarged up to this factor (never past the tier's cap) before thresholding. */
+  bwMaxUpscale: 2,
+  bwSharpenRadius: 1.0,
+  bwSharpenAmount: 1.0,
+  /** Isolated single black pixels are dropped after thresholding (v1's median did this, at a cost). */
+  bwDespeckle: true,
+  grayMaxUpscale: 1.5,
+  /** Levels on the flat-fielded page: values >= white become paper white, <= black become ink black. */
+  grayWhite: 0.91,
+  grayBlack: 0.15,
+  graySharpenRadius: 1.6,
+  graySharpenAmount: 1.5,
+};
+
+/** v1's threshold, kept for reference and the parity helper. */
 export const BILEVEL_THRESHOLD = 0.76;
 
 /** CIColorControls' luminance weights (Rec. 709, as CoreImage rounds them). */
@@ -49,23 +73,26 @@ export async function processPage(
   tier: QualityTier,
   encode: JpegEncoder,
 ): Promise<ProcessOutput> {
-  const scaled = downscale(source, maxLongEdge(tier, mode));
-  const { width, height } = scaled;
+  const cap = maxLongEdge(tier, mode);
 
   switch (mode) {
     case 'color': {
+      const scaled = downscale(source, cap);
+      const { width, height } = scaled;
       const preview = enhanceColor(scaled);
       const data = await encode(preview, jpegQuality(tier, mode), false);
       return { data, encoding: 'jpegRGB', width, height, mode, preview };
     }
     case 'grayscale': {
-      const gray = enhanceGray(scaled);
+      const gray = renderGray(source, cap);
+      const { width, height } = gray;
       const preview = grayToRGBA(gray);
       const data = await encode(preview, jpegQuality(tier, mode), true);
       return { data, encoding: 'jpegGray', width, height, mode, preview };
     }
     case 'blackAndWhite': {
-      const bw = binarize(scaled);
+      const bw = renderBilevel(source, cap);
+      const { width, height } = bw;
       const packed = packBilevel(bw);
       // Flate on 1-bit text typically lands 15-30x, which is why B&W pages end up an order
       // of magnitude smaller than the same page as JPEG.
@@ -136,22 +163,80 @@ function enhanceColor(image: RGBAImage): RGBAImage {
   return out;
 }
 
-function enhanceGray(image: RGBAImage): GrayImage {
-  const flat = flatField(desaturate(image));
-  contrast(flat, 1.18, 0);
-  unsharpMask(flat, 1.0, 0.45);
-  return floatToGray(flat);
+/**
+ * Output scale for a page: shrink to the cap, or enlarge a soft capture by up to `maxUpscale`
+ * (never past the cap). Returns the working image at min(1, scale) and the final size.
+ */
+function plan(source: RGBAImage, cap: number, maxUpscale: number) {
+  const long = Math.max(source.width, source.height);
+  const scale = Math.min(cap / long, maxUpscale);
+  const work = scale < 1 ? downscale(source, cap) : source;
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  return { work, width, height, enlarge: scale > 1.02 };
 }
 
-function binarize(image: RGBAImage): GrayImage {
-  // 3x3 median knocks out sensor speckle that would otherwise survive the threshold as
-  // scattered black dots and wreck the Flate ratio.
-  const gray = median3x3(desaturate(image));
-  const flat = flatField(gray);
-  const out = createGray(flat.width, flat.height);
-  const f = flat.data;
-  for (let i = 0; i < f.length; i++) out.data[i] = f[i] > BILEVEL_THRESHOLD ? 255 : 0;
+/** Greyscale: flat-field, pin paper/ink with levels, sharpen, enlarge soft captures. */
+function renderGray(source: RGBAImage, cap: number): GrayImage {
+  const { work, width, height, enlarge } = plan(source, cap, QUALITY.grayMaxUpscale);
+  let g = flatField(desaturate(work));
+  levels(g, QUALITY.grayBlack, QUALITY.grayWhite);
+  unsharpMask(g, QUALITY.graySharpenRadius, QUALITY.graySharpenAmount);
+  if (enlarge) g = upscaleFloatCubic(g, width, height);
+  return floatToGray(g);
+}
+
+/**
+ * Black & white: flat-field, sharpen, enlarge soft captures to a print-like resolution, then
+ * threshold. Thresholding the enlarged, still-continuous image is what keeps edges smooth and
+ * thin strokes whole; thresholding first and enlarging after would only enlarge the staircase.
+ */
+function renderBilevel(source: RGBAImage, cap: number): GrayImage {
+  const { work, width, height, enlarge } = plan(source, cap, QUALITY.bwMaxUpscale);
+  let g = flatField(desaturate(work));
+  unsharpMask(g, QUALITY.bwSharpenRadius, QUALITY.bwSharpenAmount);
+  if (enlarge) g = upscaleFloatCubic(g, width, height);
+  const out = createGray(g.width, g.height);
+  const f = g.data;
+  const t = QUALITY.bwThreshold;
+  for (let i = 0; i < f.length; i++) out.data[i] = f[i] > t ? 255 : 0;
+  if (QUALITY.bwDespeckle) despeckle(out);
   return out;
+}
+
+/** Map [black, white] to [0, 1], clamping: paper texture goes white, ink goes solid. */
+function levels(plane: FloatImage, black: number, white: number): void {
+  const p = plane.data;
+  const k = 1 / Math.max(1e-3, white - black);
+  for (let i = 0; i < p.length; i++) {
+    const v = (p[i] - black) * k;
+    p[i] = v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+}
+
+/** Turn isolated black pixels (no black 8-neighbour) white. Sensor noise, not ink. */
+function despeckle(img: GrayImage): void {
+  const { width: w, height: h, data } = img;
+  const src = new Uint8Array(data);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (src[i] !== 0) continue;
+      let ink = 0;
+      for (let dy = -1; dy <= 1 && !ink; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if ((dx || dy) && xx >= 0 && xx < w && src[yy * w + xx] === 0) {
+            ink = 1;
+            break;
+          }
+        }
+      }
+      if (!ink) data[i] = 255;
+    }
+  }
 }
 
 function desaturate(image: RGBAImage): FloatImage {
@@ -192,53 +277,6 @@ function unsharpMask(plane: FloatImage, radius: number, intensity: number): void
   const p = plane.data;
   const b = blurred.data;
   for (let i = 0; i < p.length; i++) p[i] += intensity * (p[i] - b[i]);
-}
-
-/** 3x3 median with clamped edges. */
-function median3x3(src: FloatImage): FloatImage {
-  const { width: w, height: h } = src;
-  const s = src.data;
-  const out = createFloat(w, h);
-  const win = new Float32Array(9);
-  for (let y = 0; y < h; y++) {
-    const y0 = y > 0 ? y - 1 : 0;
-    const y2 = y < h - 1 ? y + 1 : h - 1;
-    for (let x = 0; x < w; x++) {
-      const x0 = x > 0 ? x - 1 : 0;
-      const x2 = x < w - 1 ? x + 1 : w - 1;
-      win[0] = s[y0 * w + x0];
-      win[1] = s[y0 * w + x];
-      win[2] = s[y0 * w + x2];
-      win[3] = s[y * w + x0];
-      win[4] = s[y * w + x];
-      win[5] = s[y * w + x2];
-      win[6] = s[y2 * w + x0];
-      win[7] = s[y2 * w + x];
-      win[8] = s[y2 * w + x2];
-      out.data[y * w + x] = median9(win);
-    }
-  }
-  return out;
-}
-
-/** Median of 9 via the classic 19-exchange network. */
-function median9(p: Float32Array): number {
-  let t: number;
-  const sw = (a: number, b: number) => {
-    if (p[a] > p[b]) {
-      t = p[a];
-      p[a] = p[b];
-      p[b] = t;
-    }
-  };
-  sw(1, 2); sw(4, 5); sw(7, 8);
-  sw(0, 1); sw(3, 4); sw(6, 7);
-  sw(1, 2); sw(4, 5); sw(7, 8);
-  sw(0, 3); sw(5, 8); sw(4, 7);
-  sw(3, 6); sw(1, 4); sw(2, 5);
-  sw(4, 7); sw(4, 2); sw(6, 4);
-  sw(4, 2);
-  return p[4];
 }
 
 // ── Blur ────────────────────────────────────────────────────────────────────────────────

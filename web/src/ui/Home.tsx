@@ -104,7 +104,7 @@ export function Home({
                 </span>
                 <div className="main">
                   <div className="title">OneDrive</div>
-                  <div className="sub">Not set up on this server yet</div>
+                  <div className="sub">Not switched on for this site yet</div>
                 </div>
               </div>
             ) : od.signedIn ? (

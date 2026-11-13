@@ -159,7 +159,7 @@ export function Review({
             <div className="main">
               <div className="title">OneDrive</div>
               {!od.available ? (
-                <div className="sub">Not set up on this server</div>
+                <div className="sub">Not switched on for this site yet</div>
               ) : od.signedIn ? (
                 <button className="sub" onClick={onPickFolder}>
                   {settings.folder.path}
@@ -170,7 +170,12 @@ export function Review({
                 </button>
               )}
             </div>
-            <Switch label="Upload to OneDrive" checked={settings.sendToOneDrive && od.available} onChange={(v) => updateSettings({ sendToOneDrive: v })} />
+            <Switch
+              label="Upload to OneDrive"
+              disabled={!od.available}
+              checked={settings.sendToOneDrive && od.available}
+              onChange={(v) => updateSettings({ sendToOneDrive: v })}
+            />
           </div>
           <div className="dest">
             <Icon name="mail" />
