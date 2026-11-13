@@ -1,0 +1,7 @@
+# One line-ending convention on the Mac and the PC.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.wasm binary
+*.gz binary

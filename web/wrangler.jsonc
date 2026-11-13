@@ -1,0 +1,45 @@
+{
+  // snapdrive.xjpc.ca: SnapDrive v2, a public PWA. Static files (dist/) are served straight from
+  // assets; only /api/* runs worker/index.ts. The Worker stores nothing: it brokers OneDrive
+  // refresh tokens (sealed into the user's own HttpOnly cookie) and relays Resend calls with the
+  // user's own key (sealed the same way). Route contract: docs/ARCHITECTURE.md.
+  //
+  // Secrets (npx wrangler secret put <NAME>; keep the values outside the repo):
+  //   SEAL_KEY          32 random bytes, base64. Rotating it signs every user out of OneDrive
+  //                     and disconnects every Resend key (all sealed cookies become unreadable).
+  //   MS_CLIENT_SECRET  Azure client secret for the Web redirect URI
+  //                     https://snapdrive.xjpc.ca/api/ms/callback (expires: renew before it does).
+  // Local dev: copy .dev.vars.example to .dev.vars (gitignored) and run `npm run worker:dev`
+  // (port 8794).
+  "name": "snapdrive",
+  "account_id": "b2eec3e0ee4c78ba1f5ca2d1853ace5a",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // v1's Azure registration (personal Microsoft accounts). Not a secret.
+    "MS_CLIENT_ID": "de30792a-98aa-4d0a-90e5-0f86eda12646",
+    // Must match the registration's sign-in audience: consumers | organizations | common | <tenant id>.
+    "MS_TENANT": "consumers"
+  },
+  // Logs carry route, method, status, timing and upstream status codes only: never tokens,
+  // API keys, cookies, email addresses or bodies (see worker/index.ts).
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "snapdrive.xjpc.ca", "custom_domain": true }],
+  "workers_dev": false,
+  // Local dev. Without `host`, wrangler rewrites request.url (and a matching Origin) to the
+  // route above, so the OAuth redirect URI would come out as http://snapdrive.xjpc.ca/... .
+  // With it, the Worker sees http://localhost:8794, which is the URI registered on Azure for dev.
+  "dev": {
+    "ip": "127.0.0.1",
+    "port": 8794,
+    "local_protocol": "http",
+    "upstream_protocol": "http",
+    "host": "localhost:8794"
+  }
+}

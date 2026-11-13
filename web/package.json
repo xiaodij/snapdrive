@@ -1,0 +1,46 @@
+{
+  "name": "snapdrive-web",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "SnapDrive v2: document scanner PWA. Crops, deskews, picks colour/grey/B&W, OCRs, and sends searchable PDFs to OneDrive or by email through the user's own Resend account.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "worker:dev": "wrangler dev --port 8794 --ip 127.0.0.1",
+    "deploy": "npm run build && wrangler deploy",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "icons": "pwa-assets-generator",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit",
+    "predev": "node scripts/copy-ocr-assets.mjs",
+    "prebuild": "node scripts/copy-ocr-assets.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0",
+    "fflate": "^0.8.3",
+    "idb-keyval": "^6.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261113.1",
+    "@playwright/test": "^1.65.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@types/node": "^26.6.6",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vite-pwa/assets-generator": "^2.0.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.161.0"
+  }
+}

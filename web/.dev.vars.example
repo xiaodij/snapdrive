@@ -1,0 +1,14 @@
+# Copy to .dev.vars (gitignored) for `npm run worker:dev` (wrangler dev on 127.0.0.1:8794).
+
+# 32 random bytes, base64. Any value works locally; production has its own.
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+SEAL_KEY=
+
+# Azure client secret. Leave empty until the Web redirect URI
+# http://localhost:8794/api/ms/callback is registered on the app; /api/config then reports
+# onedrive=false and sign-in is refused with a clear message.
+MS_CLIENT_SECRET=
+
+# Optional: extra origins the CSRF guard accepts, e.g. a Vite dev server proxying /api here.
+# Never set in production.
+# DEV_ORIGINS=http://localhost:5192

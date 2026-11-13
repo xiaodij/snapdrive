@@ -30,3 +30,23 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# ── v2 PWA (web/) ────────────────────────────────────────────────────────────
+node_modules/
+web/dist/
+web/dev-dist/
+web/.wrangler/
+web/.dev.vars
+web/test-results/
+web/playwright-report/
+web/test/out/
+# Real phone photos used for local testing only: private, never committed.
+web/test/fixtures/private/
+# Finished deliverables (estate convention): confidential, mostly binary.
+matters/
+web/public/tesseract/
+web/public/tessdata/
+web/test/fixtures/e2e/
+
+# Internal project notes (estate paths, secrets locations): local only, this repo is public.
+CLAUDE.md

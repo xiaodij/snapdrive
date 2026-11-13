@@ -1,5 +1,9 @@
 # SnapDrive
 
+> **v2 is a PWA** (iPhone, Android, desktop) with OneDrive upload *and* email through your own
+> Resend account: see [`web/`](web/README.md), live at https://snapdrive.xjpc.ca.
+> The native iOS app below (v1) is kept as it was at its final commit.
+
 An iOS document scanner that crops, deskews, cleans up and uploads straight to OneDrive.
 Everything runs on the phone — there is no server, and nothing is sent anywhere except the
 finished PDF going to your own OneDrive.
